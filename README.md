@@ -100,6 +100,12 @@ For this use case, I recommend:
 4. Set `DATABASE_URL`
 5. Run the server with `newsletter-mcp`
 
+## Testing
+
+Run the current unit and integration tests with:
+
+`python -m unittest discover -s tests`
+
 ## Supabase Setup
 
 1. Create a Supabase project.

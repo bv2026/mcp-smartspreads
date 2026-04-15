@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Iterator
 
 from sqlalchemy import (
@@ -27,6 +27,10 @@ class Base(DeclarativeBase):
     pass
 
 
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 class Newsletter(Base):
     __tablename__ = "newsletters"
 
@@ -38,7 +42,7 @@ class Newsletter(Base):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
-    ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     issue_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     issue_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     issue_status: Mapped[str] = mapped_column(String(24), nullable=False, default="ingested")
@@ -184,7 +188,7 @@ class ParserRun(Base):
     newsletter_id: Mapped[int] = mapped_column(ForeignKey("newsletters.id", ondelete="CASCADE"), nullable=False)
     parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    run_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    run_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     run_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     page_count_detected: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pages_parsed: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -227,12 +231,12 @@ class IssueBrief(Base):
     )
     watchlist_summary_json: Mapped[dict] = mapped_column("watchlist_summary", JSON, nullable=False, default=dict)
     change_summary_json: Mapped[dict] = mapped_column("change_summary", JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     newsletter: Mapped["Newsletter"] = relationship(back_populates="issue_brief")
@@ -257,7 +261,7 @@ class IssueDelta(Base):
     removed_entries_json: Mapped[list] = mapped_column("removed_entries", JSON, nullable=False, default=list)
     changed_entries_json: Mapped[list] = mapped_column("changed_entries", JSON, nullable=False, default=list)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     newsletter: Mapped["Newsletter"] = relationship(
         back_populates="issue_delta",
@@ -278,7 +282,7 @@ class PublicationRun(Base):
     output_root: Mapped[str | None] = mapped_column(Text, nullable=True)
     manifest_json: Mapped[dict] = mapped_column("manifest", JSON, nullable=False, default=dict)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     newsletter: Mapped["Newsletter"] = relationship(back_populates="publication_runs")
     artifacts: Mapped[list["PublicationArtifact"]] = relationship(

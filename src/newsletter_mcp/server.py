@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import json
 from io import StringIO
 from pathlib import Path
@@ -33,6 +33,10 @@ database.create_schema()
 mcp = FastMCP("newsletter-mcp")
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 def _seed_record(parsed) -> dict[str, Any]:
     return {
         "source_file": str(parsed.source_file),
@@ -59,7 +63,6 @@ def _normalize_key_part(value: str) -> str:
 def _build_entry_key(week_ended: date, row: Any) -> str:
     return "|".join(
         [
-            week_ended.isoformat(),
             _normalize_key_part(row.section_name),
             _normalize_key_part(row.commodity_name),
             _normalize_key_part(row.spread_code),
@@ -200,10 +203,16 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
 
     previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
     previous_entries = previous_newsletter.watchlist_entries if previous_newsletter is not None else []
-    added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
-        list(newsletter.watchlist_entries),
-        list(previous_entries),
-    )
+    if previous_newsletter is None:
+        added_entries = []
+        removed_entries = []
+        changed_entries = []
+        delta_summary = "No prior issue available for comparison."
+    else:
+        added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
+            list(newsletter.watchlist_entries),
+            list(previous_entries),
+        )
 
     issue_brief = session.execute(
         select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
@@ -240,7 +249,7 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
                 added_entries_json=added_entries,
                 removed_entries_json=removed_entries,
                 changed_entries_json=changed_entries,
-                summary_text=delta_summary if previous_newsletter is not None else "No prior issue available for comparison.",
+                summary_text=delta_summary,
             )
         )
 
@@ -265,7 +274,7 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
 
     return {
         "parser_run_id": parser_run.id,
-        "delta_summary": delta_summary if previous_newsletter is not None else None,
+        "delta_summary": None if previous_newsletter is None else delta_summary,
     }
 
 
@@ -300,8 +309,8 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             newsletter_id=newsletter.id,
             parser_version=PARSER_VERSION,
             status="completed",
-            run_started_at=datetime.utcnow(),
-            run_completed_at=datetime.utcnow(),
+            run_started_at=_utcnow(),
+            run_completed_at=_utcnow(),
             page_count_detected=parsed.metadata.get("page_count"),
             pages_parsed=parsed.metadata.get("page_count"),
             watchlist_entry_count=len(parsed.watchlist_rows),
@@ -399,10 +408,16 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                 .order_by(WatchlistEntry.id)
             ).scalars().all()
 
-        added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
-            current_entries,
-            previous_entries,
-        )
+        if previous_newsletter is None:
+            added_entries = []
+            removed_entries = []
+            changed_entries = []
+            delta_summary = "No prior issue available for comparison."
+        else:
+            added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
+                current_entries,
+                previous_entries,
+            )
 
         session.add(
             IssueBrief(
@@ -430,7 +445,7 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                 added_entries_json=added_entries,
                 removed_entries_json=removed_entries,
                 changed_entries_json=changed_entries,
-                summary_text=delta_summary if previous_newsletter is not None else "No prior issue available for comparison.",
+                summary_text=delta_summary,
             )
         )
         session.add(
@@ -454,7 +469,7 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             "has_watchlist_reference": parsed.watchlist_reference is not None,
             "issue_status": newsletter.issue_status,
             "parser_run_status": parser_run.status,
-            "delta_summary": delta_summary if previous_newsletter is not None else None,
+            "delta_summary": None if previous_newsletter is None else delta_summary,
         }
 
 

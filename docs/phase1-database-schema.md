@@ -124,7 +124,6 @@ Phase 1 additions recommended:
 - `metadata` jsonb not null default `{}`
 
 `entry_key` should be a stable normalized identifier derived from:
-- week ended
 - section name
 - commodity name
 - spread code
