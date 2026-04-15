@@ -1,6 +1,7 @@
 .env
 newsletters.db
 logs/
+run/
 export/
 published/
 __pycache__/
