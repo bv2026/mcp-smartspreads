@@ -9,6 +9,7 @@ This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder
 - [`PROMPTS.md`](./PROMPTS.md) for reusable prompt patterns
 - [`PHASED_ARCHITECTURE.md`](./PHASED_ARCHITECTURE.md) for the two-workflow, two-phase system design
 - [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
+- [`docs/phase1-database-schema.md`](./docs/phase1-database-schema.md) for the concrete Phase 1 schema design
 
 ## Recommendation
 

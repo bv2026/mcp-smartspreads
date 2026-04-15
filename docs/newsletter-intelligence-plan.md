@@ -91,6 +91,8 @@ Core tables:
 - define published file contract
 - define issue and publication identifiers
 
+Step 1 schema design is documented in [`phase1-database-schema.md`](./phase1-database-schema.md).
+
 ### Step 2: Weekly intelligence
 
 - improve issue parsing
