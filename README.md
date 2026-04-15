@@ -47,6 +47,21 @@ For this use case, I recommend:
 - One row per issue for the watchlist overview/reference page
 - Stores the column definitions plus trading and classification rules used to interpret the watchlist
 
+### `issue_briefs`
+
+- One row per issue-level intelligence brief
+- Stores the executive summary plus structured watchlist and change summaries
+
+### `issue_deltas`
+
+- One row per issue comparison
+- Stores added, removed, and changed watchlist entries relative to the prior issue
+
+### `parser_runs` and `publication_runs`
+
+- Track ingestion provenance and publication lifecycle state
+- Make weekly processing auditable instead of file-only
+
 ## What Gets Imported
 
 ### Fully imported
@@ -98,6 +113,7 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 
 - `ingest_newsletter(pdf_path=None)` parses one PDF and stores it
 - `ingest_pending_newsletters()` ingests every PDF in `data/` that is not already stored
+- `backfill_phase1_intelligence()` seeds parser, brief, delta, and publication records for issues already in the database
 - `list_issues(limit=10)` returns recently imported issues
 - `get_issue_summary(week_ended)` returns the issue summary and section summaries
 - `get_watchlist(week_ended, min_trade_quality=None, include_reference=True)` returns structured watchlist rows and can include the issue's watchlist reference block for export/report workflows

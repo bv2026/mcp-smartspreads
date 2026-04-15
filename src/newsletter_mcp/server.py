@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 import json
 from io import StringIO
 from pathlib import Path
@@ -14,14 +14,19 @@ from sqlalchemy import desc, select
 from .config import Settings
 from .database import (
     Database,
+    IssueBrief,
+    IssueDelta,
     Newsletter,
     NewsletterSection,
+    ParserRun,
+    PublicationRun,
     WatchlistEntry,
     WatchlistReferenceRecord,
 )
 from .parser import parse_newsletter
 
 
+PARSER_VERSION = "phase1-v1"
 settings = Settings.from_env()
 database = Database(settings.database_url)
 database.create_schema()
@@ -37,7 +42,241 @@ def _seed_record(parsed) -> dict[str, Any]:
         "raw_text": parsed.raw_text,
         "overall_summary": parsed.overall_summary,
         "metadata_json": parsed.metadata,
+        "issue_code": parsed.source_file.stem,
+        "issue_version": None,
+        "issue_status": "validated",
+        "page_count": parsed.metadata.get("page_count"),
+        "source_modified_at": datetime.fromtimestamp(parsed.source_file.stat().st_mtime),
     }
+
+
+def _normalize_key_part(value: str) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() else "-" for ch in value.strip())
+    normalized = "-".join(part for part in normalized.split("-") if part)
+    return normalized
+
+
+def _build_entry_key(week_ended: date, row: Any) -> str:
+    return "|".join(
+        [
+            week_ended.isoformat(),
+            _normalize_key_part(row.section_name),
+            _normalize_key_part(row.commodity_name),
+            _normalize_key_part(row.spread_code),
+            row.side.lower(),
+        ]
+    )
+
+
+def _classify_section_type(section_name: str) -> str:
+    name = section_name.lower()
+    if "watch list" in name:
+        return "watchlist_page"
+    if "trade calendar" in name:
+        return "trade_calendar"
+    if "margin summary" in name:
+        return "margin_summary"
+    if "macro" in name:
+        return "macro_commentary"
+    return "article"
+
+
+def _summarize_watchlist_rows(rows: list[Any]) -> dict[str, Any]:
+    section_counts = Counter(row.section_name for row in rows)
+    quality_counts = Counter(row.trade_quality or row.portfolio or "unclassified" for row in rows)
+    return {
+        "entry_count": len(rows),
+        "section_counts": dict(section_counts),
+        "classification_counts": dict(quality_counts),
+    }
+
+
+def _serialize_entry_delta(current: WatchlistEntry, previous: WatchlistEntry) -> dict[str, Any]:
+    changed_fields: list[str] = []
+    for field_name in ("side", "enter_date", "exit_date", "trade_quality", "risk_level", "volatility_structure"):
+        if getattr(current, field_name) != getattr(previous, field_name):
+            changed_fields.append(field_name)
+
+    return {
+        "entry_key": current.entry_key,
+        "commodity_name": current.commodity_name,
+        "spread_code": current.spread_code,
+        "changed_fields": changed_fields,
+        "current": _serialize_watchlist_entry(current),
+        "previous": _serialize_watchlist_entry(previous),
+    }
+
+
+def _compute_issue_delta(
+    current_entries: list[WatchlistEntry],
+    previous_entries: list[WatchlistEntry],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
+    current_map = {entry.entry_key: entry for entry in current_entries if entry.entry_key}
+    previous_map = {entry.entry_key: entry for entry in previous_entries if entry.entry_key}
+
+    added_keys = sorted(set(current_map) - set(previous_map))
+    removed_keys = sorted(set(previous_map) - set(current_map))
+    changed_keys = sorted(
+        key
+        for key in set(current_map) & set(previous_map)
+        if any(
+            getattr(current_map[key], field_name) != getattr(previous_map[key], field_name)
+            for field_name in ("side", "enter_date", "exit_date", "trade_quality", "risk_level", "volatility_structure")
+        )
+    )
+
+    added = [_serialize_watchlist_entry(current_map[key]) for key in added_keys]
+    removed = [_serialize_watchlist_entry(previous_map[key]) for key in removed_keys]
+    changed = [_serialize_entry_delta(current_map[key], previous_map[key]) for key in changed_keys]
+
+    summary = (
+        f"Added {len(added)} entries, removed {len(removed)} entries, "
+        f"and changed {len(changed)} carried entries versus the prior issue."
+    )
+    return added, removed, changed, summary
+
+
+def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]:
+    parser_run = session.execute(
+        select(ParserRun).where(ParserRun.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    if parser_run is None:
+        parser_run = ParserRun(
+            newsletter_id=newsletter.id,
+            parser_version=PARSER_VERSION,
+            status="completed",
+            run_started_at=newsletter.ingested_at,
+            run_completed_at=newsletter.ingested_at,
+            page_count_detected=newsletter.page_count or newsletter.metadata_json.get("page_count"),
+            pages_parsed=newsletter.page_count or newsletter.metadata_json.get("page_count"),
+            watchlist_entry_count=len(newsletter.watchlist_entries),
+            section_count=len(newsletter.sections),
+            warning_count=0,
+            warnings_json=[],
+            metrics_json={
+                "has_watchlist_reference": newsletter.watchlist_reference is not None,
+                "source_filename": Path(newsletter.source_file).name,
+                "backfilled": True,
+            },
+        )
+        session.add(parser_run)
+        session.flush()
+
+    if not newsletter.issue_status:
+        newsletter.issue_status = "validated"
+    if newsletter.page_count is None:
+        newsletter.page_count = newsletter.metadata_json.get("page_count")
+
+    for section in newsletter.sections:
+        if section.parser_run_id is None:
+            section.parser_run_id = parser_run.id
+        if section.section_type is None:
+            section.section_type = _classify_section_type(section.name)
+        if section.extraction_confidence is None:
+            section.extraction_confidence = 0.95
+        if section.metadata_json is None:
+            section.metadata_json = {}
+
+    for entry in newsletter.watchlist_entries:
+        if entry.entry_key is None:
+            entry.entry_key = _build_entry_key(newsletter.week_ended, entry)
+        if entry.parser_run_id is None:
+            entry.parser_run_id = parser_run.id
+        if entry.publication_state is None:
+            entry.publication_state = "candidate"
+        if entry.metadata_json is None:
+            entry.metadata_json = {}
+
+    if newsletter.watchlist_reference is not None:
+        reference = newsletter.watchlist_reference
+        if reference.parser_run_id is None:
+            reference.parser_run_id = parser_run.id
+        if reference.reference_version is None:
+            reference.reference_version = "v1"
+        if reference.metadata_json is None:
+            reference.metadata_json = {}
+
+    session.flush()
+
+    previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
+    previous_entries = previous_newsletter.watchlist_entries if previous_newsletter is not None else []
+    added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
+        list(newsletter.watchlist_entries),
+        list(previous_entries),
+    )
+
+    issue_brief = session.execute(
+        select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    if issue_brief is None:
+        session.add(
+            IssueBrief(
+                newsletter_id=newsletter.id,
+                parser_run_id=parser_run.id,
+                brief_status="draft",
+                headline=newsletter.title,
+                executive_summary=newsletter.overall_summary,
+                key_themes_json=[],
+                notable_risks_json=[],
+                notable_opportunities_json=[],
+                watchlist_summary_json=_summarize_watchlist_rows(newsletter.watchlist_entries),
+                change_summary_json={
+                    "added_count": len(added_entries),
+                    "removed_count": len(removed_entries),
+                    "changed_count": len(changed_entries),
+                },
+            )
+        )
+
+    issue_delta = session.execute(
+        select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    if issue_delta is None:
+        session.add(
+            IssueDelta(
+                newsletter_id=newsletter.id,
+                previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
+                delta_status="generated",
+                added_entries_json=added_entries,
+                removed_entries_json=removed_entries,
+                changed_entries_json=changed_entries,
+                summary_text=delta_summary if previous_newsletter is not None else "No prior issue available for comparison.",
+            )
+        )
+
+    publication_run = session.execute(
+        select(PublicationRun)
+        .where(PublicationRun.newsletter_id == newsletter.id)
+        .order_by(desc(PublicationRun.created_at))
+    ).scalars().first()
+    if publication_run is None:
+        session.add(
+            PublicationRun(
+                newsletter_id=newsletter.id,
+                publication_version="draft-1",
+                status="draft",
+                manifest_json={
+                    "week_ended": newsletter.week_ended.isoformat(),
+                    "entry_count": len(newsletter.watchlist_entries),
+                    "backfilled": True,
+                },
+            )
+        )
+
+    return {
+        "parser_run_id": parser_run.id,
+        "delta_summary": delta_summary if previous_newsletter is not None else None,
+    }
+
+
+def _get_previous_newsletter(session: Any, current_week_ended: date) -> Newsletter | None:
+    stmt = (
+        select(Newsletter)
+        .where(Newsletter.week_ended < current_week_ended)
+        .order_by(desc(Newsletter.week_ended))
+        .limit(1)
+    )
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def _save_parsed_newsletter(parsed) -> dict[str, Any]:
@@ -57,6 +296,26 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
         session.add(newsletter)
         session.flush()
 
+        parser_run = ParserRun(
+            newsletter_id=newsletter.id,
+            parser_version=PARSER_VERSION,
+            status="completed",
+            run_started_at=datetime.utcnow(),
+            run_completed_at=datetime.utcnow(),
+            page_count_detected=parsed.metadata.get("page_count"),
+            pages_parsed=parsed.metadata.get("page_count"),
+            watchlist_entry_count=len(parsed.watchlist_rows),
+            section_count=len(parsed.section_summaries),
+            warning_count=0,
+            warnings_json=[],
+            metrics_json={
+                "has_watchlist_reference": parsed.watchlist_reference is not None,
+                "source_filename": parsed.source_file.name,
+            },
+        )
+        session.add(parser_run)
+        session.flush()
+
         for section in parsed.section_summaries:
             session.add(
                 NewsletterSection(
@@ -66,6 +325,10 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                     page_end=section.page_end,
                     raw_text=section.raw_text,
                     summary_text=section.summary_text,
+                    section_type=_classify_section_type(section.name),
+                    extraction_confidence=0.95,
+                    parser_run_id=parser_run.id,
+                    metadata_json={},
                 )
             )
 
@@ -79,6 +342,9 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                     column_definitions_json=parsed.watchlist_reference.column_definitions,
                     trading_rules_json=parsed.watchlist_reference.trading_rules,
                     classification_rules_json=parsed.watchlist_reference.classification_rules,
+                    parser_run_id=parser_run.id,
+                    reference_version="v1",
+                    metadata_json={},
                 )
             )
 
@@ -108,8 +374,76 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                     section_name=row.section_name,
                     page_number=row.page_number,
                     raw_row=row.raw_row,
+                    entry_key=_build_entry_key(parsed.week_ended, row),
+                    tradeable=None,
+                    blocked_reason=None,
+                    parser_run_id=parser_run.id,
+                    publication_state="candidate",
+                    metadata_json={},
                 )
             )
+
+        session.flush()
+
+        current_entries = session.execute(
+            select(WatchlistEntry)
+            .where(WatchlistEntry.newsletter_id == newsletter.id)
+            .order_by(WatchlistEntry.id)
+        ).scalars().all()
+        previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
+        previous_entries: list[WatchlistEntry] = []
+        if previous_newsletter is not None:
+            previous_entries = session.execute(
+                select(WatchlistEntry)
+                .where(WatchlistEntry.newsletter_id == previous_newsletter.id)
+                .order_by(WatchlistEntry.id)
+            ).scalars().all()
+
+        added_entries, removed_entries, changed_entries, delta_summary = _compute_issue_delta(
+            current_entries,
+            previous_entries,
+        )
+
+        session.add(
+            IssueBrief(
+                newsletter_id=newsletter.id,
+                parser_run_id=parser_run.id,
+                brief_status="draft",
+                headline=newsletter.title,
+                executive_summary=newsletter.overall_summary,
+                key_themes_json=[],
+                notable_risks_json=[],
+                notable_opportunities_json=[],
+                watchlist_summary_json=_summarize_watchlist_rows(parsed.watchlist_rows),
+                change_summary_json={
+                    "added_count": len(added_entries),
+                    "removed_count": len(removed_entries),
+                    "changed_count": len(changed_entries),
+                },
+            )
+        )
+        session.add(
+            IssueDelta(
+                newsletter_id=newsletter.id,
+                previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
+                delta_status="generated",
+                added_entries_json=added_entries,
+                removed_entries_json=removed_entries,
+                changed_entries_json=changed_entries,
+                summary_text=delta_summary if previous_newsletter is not None else "No prior issue available for comparison.",
+            )
+        )
+        session.add(
+            PublicationRun(
+                newsletter_id=newsletter.id,
+                publication_version="draft-1",
+                status="draft",
+                manifest_json={
+                    "week_ended": newsletter.week_ended.isoformat(),
+                    "entry_count": len(current_entries),
+                },
+            )
+        )
 
         return {
             "status": "ingested",
@@ -118,6 +452,9 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             "watchlist_rows": len(parsed.watchlist_rows),
             "sections": len(parsed.section_summaries),
             "has_watchlist_reference": parsed.watchlist_reference is not None,
+            "issue_status": newsletter.issue_status,
+            "parser_run_status": parser_run.status,
+            "delta_summary": delta_summary if previous_newsletter is not None else None,
         }
 
 
@@ -159,6 +496,30 @@ def ingest_pending_newsletters() -> dict[str, Any]:
         "skipped_count": len(skipped),
         "results": results,
     }
+
+
+@mcp.tool()
+def backfill_phase1_intelligence() -> dict[str, Any]:
+    """Backfill Phase 1 parser, brief, delta, and publication records for existing issues."""
+    with database.session() as session:
+        newsletters = session.execute(
+            select(Newsletter).order_by(Newsletter.week_ended)
+        ).scalars().all()
+        results: list[dict[str, Any]] = []
+        for newsletter in newsletters:
+            seeded = _seed_phase1_records(session, newsletter)
+            results.append(
+                {
+                    "week_ended": newsletter.week_ended.isoformat(),
+                    "parser_run_id": seeded["parser_run_id"],
+                    "delta_summary": seeded["delta_summary"],
+                }
+            )
+
+        return {
+            "issue_count": len(newsletters),
+            "results": results,
+        }
 
 
 @mcp.tool()

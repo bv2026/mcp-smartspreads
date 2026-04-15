@@ -4,7 +4,22 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Iterator
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    inspect,
+    select,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -24,6 +39,17 @@ class Newsletter(Base):
     overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    issue_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issue_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    issue_status: Mapped[str] = mapped_column(String(24), nullable=False, default="ingested")
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    supersedes_newsletter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("newsletters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     sections: Mapped[list["NewsletterSection"]] = relationship(
         back_populates="newsletter",
@@ -37,6 +63,25 @@ class Newsletter(Base):
         back_populates="newsletter",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+    parser_runs: Mapped[list["ParserRun"]] = relationship(
+        back_populates="newsletter",
+        cascade="all, delete-orphan",
+    )
+    issue_brief: Mapped["IssueBrief | None"] = relationship(
+        back_populates="newsletter",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    issue_delta: Mapped["IssueDelta | None"] = relationship(
+        back_populates="newsletter",
+        cascade="all, delete-orphan",
+        uselist=False,
+        foreign_keys="IssueDelta.newsletter_id",
+    )
+    publication_runs: Mapped[list["PublicationRun"]] = relationship(
+        back_populates="newsletter",
+        cascade="all, delete-orphan",
     )
 
 
@@ -53,8 +98,16 @@ class NewsletterSection(Base):
     page_end: Mapped[int] = mapped_column(Integer, nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    section_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    extraction_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    parser_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("parser_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
     newsletter: Mapped["Newsletter"] = relationship(back_populates="sections")
+    parser_run: Mapped["ParserRun | None"] = relationship(back_populates="sections")
 
 
 class WatchlistEntry(Base):
@@ -84,8 +137,18 @@ class WatchlistEntry(Base):
     section_name: Mapped[str] = mapped_column(String(40), nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     raw_row: Mapped[str] = mapped_column(Text, nullable=False)
+    entry_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tradeable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parser_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("parser_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    publication_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
     newsletter: Mapped["Newsletter"] = relationship(back_populates="watchlist_entries")
+    parser_run: Mapped["ParserRun | None"] = relationship(back_populates="watchlist_entries")
 
 
 class WatchlistReferenceRecord(Base):
@@ -103,18 +166,272 @@ class WatchlistReferenceRecord(Base):
     column_definitions_json: Mapped[list] = mapped_column("column_definitions", JSON, nullable=False, default=list)
     trading_rules_json: Mapped[list] = mapped_column("trading_rules", JSON, nullable=False, default=list)
     classification_rules_json: Mapped[list] = mapped_column("classification_rules", JSON, nullable=False, default=list)
+    parser_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("parser_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reference_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
     newsletter: Mapped["Newsletter"] = relationship(back_populates="watchlist_reference")
+    parser_run: Mapped["ParserRun | None"] = relationship(back_populates="watchlist_references")
+
+
+class ParserRun(Base):
+    __tablename__ = "parser_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id: Mapped[int] = mapped_column(ForeignKey("newsletters.id", ondelete="CASCADE"), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    run_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    run_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    page_count_detected: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pages_parsed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    watchlist_entry_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    warnings_json: Mapped[list] = mapped_column("warnings", JSON, nullable=False, default=list)
+    metrics_json: Mapped[dict] = mapped_column("metrics", JSON, nullable=False, default=dict)
+
+    newsletter: Mapped["Newsletter"] = relationship(back_populates="parser_runs")
+    sections: Mapped[list["NewsletterSection"]] = relationship(back_populates="parser_run")
+    watchlist_entries: Mapped[list["WatchlistEntry"]] = relationship(back_populates="parser_run")
+    watchlist_references: Mapped[list["WatchlistReferenceRecord"]] = relationship(back_populates="parser_run")
+    issue_briefs: Mapped[list["IssueBrief"]] = relationship(back_populates="parser_run")
+
+
+class IssueBrief(Base):
+    __tablename__ = "issue_briefs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id: Mapped[int] = mapped_column(
+        ForeignKey("newsletters.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    parser_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("parser_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    brief_status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    headline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executive_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    key_themes_json: Mapped[list] = mapped_column("key_themes", JSON, nullable=False, default=list)
+    notable_risks_json: Mapped[list] = mapped_column("notable_risks", JSON, nullable=False, default=list)
+    notable_opportunities_json: Mapped[list] = mapped_column(
+        "notable_opportunities",
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    watchlist_summary_json: Mapped[dict] = mapped_column("watchlist_summary", JSON, nullable=False, default=dict)
+    change_summary_json: Mapped[dict] = mapped_column("change_summary", JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    newsletter: Mapped["Newsletter"] = relationship(back_populates="issue_brief")
+    parser_run: Mapped["ParserRun | None"] = relationship(back_populates="issue_briefs")
+
+
+class IssueDelta(Base):
+    __tablename__ = "issue_deltas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id: Mapped[int] = mapped_column(
+        ForeignKey("newsletters.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    previous_newsletter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("newsletters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    delta_status: Mapped[str] = mapped_column(String(24), nullable=False, default="generated")
+    added_entries_json: Mapped[list] = mapped_column("added_entries", JSON, nullable=False, default=list)
+    removed_entries_json: Mapped[list] = mapped_column("removed_entries", JSON, nullable=False, default=list)
+    changed_entries_json: Mapped[list] = mapped_column("changed_entries", JSON, nullable=False, default=list)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    newsletter: Mapped["Newsletter"] = relationship(
+        back_populates="issue_delta",
+        foreign_keys=[newsletter_id],
+    )
+    previous_newsletter: Mapped["Newsletter | None"] = relationship(foreign_keys=[previous_newsletter_id])
+
+
+class PublicationRun(Base):
+    __tablename__ = "publication_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id: Mapped[int] = mapped_column(ForeignKey("newsletters.id", ondelete="CASCADE"), nullable=False)
+    publication_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    published_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    output_root: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_json: Mapped[dict] = mapped_column("manifest", JSON, nullable=False, default=dict)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    newsletter: Mapped["Newsletter"] = relationship(back_populates="publication_runs")
+    artifacts: Mapped[list["PublicationArtifact"]] = relationship(
+        back_populates="publication_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class PublicationArtifact(Base):
+    __tablename__ = "publication_artifacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    publication_run_id: Mapped[int] = mapped_column(
+        ForeignKey("publication_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+    publication_run: Mapped["PublicationRun"] = relationship(back_populates="artifacts")
 
 
 class Database:
     def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
         connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
         self.engine = create_engine(database_url, future=True, connect_args=connect_args)
         self._sessionmaker = sessionmaker(bind=self.engine, expire_on_commit=False)
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._apply_additive_migrations()
+        self._create_phase1_indexes()
+
+    def _apply_additive_migrations(self) -> None:
+        self._ensure_newsletters_phase1_columns()
+        self._ensure_newsletter_sections_phase1_columns()
+        self._ensure_watchlist_entries_phase1_columns()
+        self._ensure_watchlist_references_phase1_columns()
+
+    def _ensure_newsletters_phase1_columns(self) -> None:
+        self._add_column_if_missing("newsletters", "issue_code", self._column_sql("text"))
+        self._add_column_if_missing("newsletters", "issue_version", self._column_sql("text"))
+        self._add_column_if_missing(
+            "newsletters",
+            "issue_status",
+            self._column_sql("text", nullable=False, default="'ingested'"),
+        )
+        self._add_column_if_missing("newsletters", "page_count", self._column_sql("integer"))
+        self._add_column_if_missing(
+            "newsletters",
+            "source_modified_at",
+            self._column_sql("datetime"),
+        )
+        self._add_column_if_missing("newsletters", "approved_at", self._column_sql("datetime"))
+        self._add_column_if_missing("newsletters", "published_at", self._column_sql("datetime"))
+        self._add_column_if_missing(
+            "newsletters",
+            "supersedes_newsletter_id",
+            self._column_sql("integer"),
+        )
+
+    def _ensure_newsletter_sections_phase1_columns(self) -> None:
+        self._add_column_if_missing("newsletter_sections", "section_type", self._column_sql("text"))
+        self._add_column_if_missing(
+            "newsletter_sections",
+            "extraction_confidence",
+            self._column_sql("float"),
+        )
+        self._add_column_if_missing("newsletter_sections", "parser_run_id", self._column_sql("integer"))
+        self._add_column_if_missing(
+            "newsletter_sections",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
+    def _ensure_watchlist_entries_phase1_columns(self) -> None:
+        self._add_column_if_missing("watchlist_entries", "entry_key", self._column_sql("text"))
+        self._add_column_if_missing("watchlist_entries", "tradeable", self._column_sql("boolean"))
+        self._add_column_if_missing("watchlist_entries", "blocked_reason", self._column_sql("text"))
+        self._add_column_if_missing("watchlist_entries", "parser_run_id", self._column_sql("integer"))
+        self._add_column_if_missing(
+            "watchlist_entries",
+            "publication_state",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "watchlist_entries",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
+    def _ensure_watchlist_references_phase1_columns(self) -> None:
+        self._add_column_if_missing("watchlist_references", "parser_run_id", self._column_sql("integer"))
+        self._add_column_if_missing(
+            "watchlist_references",
+            "reference_version",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "watchlist_references",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
+    def _create_phase1_indexes(self) -> None:
+        index_statements = [
+            "create index if not exists idx_newsletters_issue_status on newsletters (issue_status)",
+            "create index if not exists idx_newsletter_sections_section_type on newsletter_sections (section_type)",
+            "create index if not exists idx_newsletter_sections_parser_run_id on newsletter_sections (parser_run_id)",
+            "create index if not exists idx_watchlist_entries_section_name on watchlist_entries (section_name)",
+            "create index if not exists idx_watchlist_entries_entry_key on watchlist_entries (entry_key)",
+            "create index if not exists idx_watchlist_entries_publication_state on watchlist_entries (publication_state)",
+            "create index if not exists idx_watchlist_entries_parser_run_id on watchlist_entries (parser_run_id)",
+            "create index if not exists idx_watchlist_references_parser_run_id on watchlist_references (parser_run_id)",
+            "create index if not exists idx_parser_runs_newsletter_id on parser_runs (newsletter_id)",
+            "create index if not exists idx_parser_runs_status on parser_runs (status)",
+            "create index if not exists idx_issue_deltas_previous_newsletter_id on issue_deltas (previous_newsletter_id)",
+            "create index if not exists idx_publication_runs_newsletter_id on publication_runs (newsletter_id)",
+            "create index if not exists idx_publication_artifacts_publication_run_id on publication_artifacts (publication_run_id)",
+        ]
+        with self.engine.begin() as connection:
+            for statement in index_statements:
+                connection.execute(text(statement))
+
+    def _column_names(self, table_name: str) -> set[str]:
+        return {column["name"] for column in inspect(self.engine).get_columns(table_name)}
+
+    def _add_column_if_missing(self, table_name: str, column_name: str, definition: str) -> None:
+        if column_name in self._column_names(table_name):
+            return
+        statement = f"alter table {table_name} add column {column_name} {definition}"
+        with self.engine.begin() as connection:
+            connection.execute(text(statement))
+
+    def _column_sql(self, logical_type: str, nullable: bool = True, default: str | None = None) -> str:
+        type_map = {
+            "text": "text",
+            "integer": "integer",
+            "float": "double precision" if self.engine.dialect.name == "postgresql" else "real",
+            "datetime": "timestamptz" if self.engine.dialect.name == "postgresql" else "datetime",
+            "boolean": "boolean" if self.engine.dialect.name == "postgresql" else "integer",
+            "json": "jsonb" if self.engine.dialect.name == "postgresql" else "text",
+        }
+        sql = type_map[logical_type]
+        if default is not None:
+            sql += f" default {default}"
+        if not nullable:
+            sql += " not null"
+        return sql
 
     @contextmanager
     def session(self) -> Iterator[Session]:
