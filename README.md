@@ -10,6 +10,7 @@ This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder
 - [`PHASED_ARCHITECTURE.md`](./PHASED_ARCHITECTURE.md) for the two-workflow, two-phase system design
 - [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
 - [`docs/phase1-database-schema.md`](./docs/phase1-database-schema.md) for the concrete Phase 1 schema design
+- [`docs/publication-contract.md`](./docs/publication-contract.md) for the published file contract and downstream handoff
 
 ## Recommendation
 
@@ -120,6 +121,7 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 - `ingest_newsletter(pdf_path=None)` parses one PDF and stores it
 - `ingest_pending_newsletters()` ingests every PDF in `data/` that is not already stored
 - `backfill_phase1_intelligence()` seeds parser, brief, delta, and publication records for issues already in the database
+- `publish_issue(week_ended, output_dir=None, publication_version=None, published_by=None)` writes the current issue into the `published/` contract files and records a publication run
 - `list_issues(limit=10)` returns recently imported issues
 - `get_issue_summary(week_ended)` returns the issue summary and section summaries
 - `get_watchlist(week_ended, min_trade_quality=None, include_reference=True)` returns structured watchlist rows and can include the issue's watchlist reference block for export/report workflows

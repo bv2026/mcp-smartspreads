@@ -107,6 +107,8 @@ Step 1 schema design is documented in [`phase1-database-schema.md`](./phase1-dat
 - generate `issue_brief.md`
 - generate publication manifest
 
+The publication contract is documented in [`publication-contract.md`](./publication-contract.md).
+
 ### Step 4: Workflow integration
 
 - update Sunday workflow around DB + publication

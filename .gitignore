@@ -2,6 +2,7 @@
 newsletters.db
 logs/
 export/
+published/
 __pycache__/
 *.pyc
 *.pyo

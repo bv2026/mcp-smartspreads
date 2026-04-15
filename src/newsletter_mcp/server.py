@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from datetime import UTC, date, datetime
+import hashlib
+from datetime import UTC, date, datetime, timedelta
 import json
 from io import StringIO
 from pathlib import Path
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -19,6 +21,7 @@ from .database import (
     Newsletter,
     NewsletterSection,
     ParserRun,
+    PublicationArtifact,
     PublicationRun,
     WatchlistEntry,
     WatchlistReferenceRecord,
@@ -27,6 +30,39 @@ from .parser import parse_newsletter
 
 
 PARSER_VERSION = "phase1-v1"
+PUBLICATION_SCHEMA_VERSION = "1.0"
+CONTRACT_CODE_RE = re.compile(r"^(?P<root>[A-Z]+)(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
+SPREAD_TOKEN_RE = re.compile(r"([+-]?)(?:(\d+)\*)?([A-Z]+[FGHJKMNQUVXZ]\d{2})")
+ROOT_SYMBOL_MAP = {
+    "BO": "/ZL",
+    "C": "/ZC",
+    "CC": "/CC",
+    "CL": "/CL",
+    "CT": "/CT",
+    "FC": "/GF",
+    "GC": "/GC",
+    "GO": None,
+    "HG": "/HG",
+    "HO": "/HO",
+    "KW": "/KE",
+    "LC": "/LE",
+    "LH": "/HE",
+    "MW": "/MWE",
+    "NG": "/NG",
+    "RB": "/RB",
+    "S": "/ZS",
+    "SB": "/SB",
+    "SI": "/SI",
+    "SM": "/ZM",
+    "VX": "/VX",
+    "W": "/ZW",
+}
+ROOT_BLOCK_REASONS = {
+    "BC": "Brent crude is not available in TOS.",
+    "FC": "Feeder Cattle is in the doghouse and should never be traded.",
+    "GO": "Gasoil is not available in TOS.",
+    "SB": "Sugar #11 is not tradeable as a spread in TOS.",
+}
 settings = Settings.from_env()
 database = Database(settings.database_url)
 database.create_schema()
@@ -54,6 +90,10 @@ def _seed_record(parsed) -> dict[str, Any]:
     }
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _normalize_key_part(value: str) -> str:
     normalized = "".join(ch.lower() if ch.isalnum() else "-" for ch in value.strip())
     normalized = "-".join(part for part in normalized.split("-") if part)
@@ -71,6 +111,10 @@ def _build_entry_key(week_ended: date, row: Any) -> str:
     )
 
 
+def _canonical_entry_key(newsletter: Newsletter, entry: WatchlistEntry) -> str:
+    return _build_entry_key(newsletter.week_ended, entry)
+
+
 def _classify_section_type(section_name: str) -> str:
     name = section_name.lower()
     if "watch list" in name:
@@ -82,6 +126,245 @@ def _classify_section_type(section_name: str) -> str:
     if "macro" in name:
         return "macro_commentary"
     return "article"
+
+
+def _parse_contract_code(contract_code: str) -> dict[str, str]:
+    match = CONTRACT_CODE_RE.match(contract_code)
+    if match is None:
+        return {"root": contract_code, "month": "", "year": ""}
+    return match.groupdict()
+
+
+def _tos_symbol_for_contract(contract_code: str) -> tuple[str | None, str | None, str]:
+    parsed = _parse_contract_code(contract_code)
+    root = parsed["root"]
+    if root in ROOT_BLOCK_REASONS:
+        return None, ROOT_BLOCK_REASONS[root], root
+    base_symbol = ROOT_SYMBOL_MAP.get(root)
+    if base_symbol is None:
+        return None, f"No TOS root mapping configured for contract root {root}.", root
+    return f"{base_symbol}{parsed['month']}{parsed['year']}", None, root
+
+
+def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
+    legs: list[dict[str, Any]] = []
+    for sign, multiplier_text, contract_code in SPREAD_TOKEN_RE.findall(spread_code):
+        multiplier = int(multiplier_text or "1")
+        operator = sign or "+"
+        tos_symbol, blocked_reason, root = _tos_symbol_for_contract(contract_code)
+        for copy_index in range(multiplier):
+            legs.append(
+                {
+                    "operator": operator,
+                    "multiplier": multiplier,
+                    "copy_index": copy_index,
+                    "contract_code": contract_code,
+                    "root_code": root,
+                    "tos_symbol": tos_symbol,
+                    "tradeable": blocked_reason is None,
+                    "blocked_reason": blocked_reason,
+                }
+            )
+    return legs
+
+
+def _infer_watchlist_type(entry: WatchlistEntry, legs: list[dict[str, Any]]) -> str:
+    unique_roots = {leg["root_code"] for leg in legs}
+    multiplier_pattern = [leg["multiplier"] for leg in legs]
+    if entry.section_name == "inter_commodity" or len(unique_roots) > 1:
+        return "intermarket"
+    if len(legs) == 2:
+        return "calendar"
+    if len(legs) >= 3 and max(multiplier_pattern, default=1) >= 2:
+        return "butterfly"
+    return "multi_leg"
+
+
+def _derive_watchlist_tier(entry: WatchlistEntry) -> str:
+    if entry.trade_quality:
+        return entry.trade_quality
+    if entry.risk_level is not None:
+        return f"Risk {entry.risk_level}"
+    if entry.portfolio:
+        return entry.portfolio
+    return "Unclassified"
+
+
+def _derive_entry_tradeability(entry: WatchlistEntry, legs: list[dict[str, Any]]) -> tuple[bool, str | None]:
+    reasons = [leg["blocked_reason"] for leg in legs if leg["blocked_reason"]]
+    if entry.trade_quality == "Tier 4":
+        reasons.append("Tier 4 trades are excluded by policy.")
+    if entry.ridx < 30:
+        reasons.append("RIDX is below the minimum threshold of 30.")
+    if reasons:
+        deduped = []
+        for reason in reasons:
+            if reason not in deduped:
+                deduped.append(reason)
+        return False, " ".join(deduped)
+    return True, None
+
+
+def _build_watchlist_publication_entry(
+    newsletter: Newsletter,
+    entry: WatchlistEntry,
+) -> dict[str, Any]:
+    legs = _parse_spread_legs(entry.spread_code)
+    tradeable, blocked_reason = _derive_entry_tradeability(entry, legs)
+    tos_symbols = [leg["tos_symbol"] for leg in legs if leg["tos_symbol"]]
+    unique_symbols = list(dict.fromkeys(tos_symbols))
+    unique_roots = list(dict.fromkeys(leg["root_code"] for leg in legs))
+    canonical_key = _canonical_entry_key(newsletter, entry)
+
+    if len(unique_roots) == 1 and ROOT_SYMBOL_MAP.get(unique_roots[0]) is not None:
+        symbol = ROOT_SYMBOL_MAP[unique_roots[0]]
+    else:
+        symbol = ",".join(symbol for symbol in dict.fromkeys(unique_symbols) if symbol)
+
+    return {
+        "id": f"wl_{canonical_key.replace('|', '_')}",
+        "entry_key": canonical_key,
+        "name": entry.commodity_name,
+        "commodity_name": entry.commodity_name,
+        "spread_code": entry.spread_code,
+        "symbol": symbol,
+        "legs": tos_symbols,
+        "leg_details": legs,
+        "type": _infer_watchlist_type(entry, legs),
+        "side": entry.side,
+        "section": entry.section_name,
+        "category": entry.category,
+        "enter_date": entry.enter_date.isoformat(),
+        "exit_date": entry.exit_date.isoformat(),
+        "valid_until": (newsletter.week_ended + timedelta(days=7)).isoformat(),
+        "win_pct": entry.win_pct,
+        "avg_value": entry.avg_profit,
+        "avg_profit": entry.avg_profit,
+        "tier": _derive_watchlist_tier(entry),
+        "volatility_structure": entry.volatility_structure,
+        "portfolio": entry.portfolio,
+        "risk_level": entry.risk_level,
+        "trade_quality": entry.trade_quality,
+        "ridx": entry.ridx,
+        "five_year_corr": entry.five_year_corr,
+        "page_number": entry.page_number,
+        "action": f"Review {entry.section_name} idea from {newsletter.week_ended.isoformat()} newsletter.",
+        "tradeable": tradeable,
+        "blocked_reason": blocked_reason,
+    }
+
+
+def _serialize_publication_yaml(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2)
+
+
+def _build_issue_brief_markdown(
+    newsletter: Newsletter,
+    brief: IssueBrief | None,
+    delta: IssueDelta | None,
+    reference: WatchlistReferenceRecord | None,
+    entries: list[WatchlistEntry],
+) -> str:
+    lines = [
+        f"# SmartSpreads Issue Brief - {newsletter.week_ended.isoformat()}",
+        "",
+        f"- Title: {newsletter.title}",
+        f"- Week Ended: {newsletter.week_ended.isoformat()}",
+        f"- Entry Count: {len(entries)}",
+        "",
+        "## Executive Summary",
+        "",
+        brief.executive_summary if brief is not None else newsletter.overall_summary,
+        "",
+        "## Watchlist Summary",
+        "",
+    ]
+    summary = brief.watchlist_summary_json if brief is not None else _summarize_watchlist_rows(entries)
+    lines.extend(
+        [
+            f"- Total entries: {summary.get('entry_count', len(entries))}",
+            f"- Section counts: {json.dumps(summary.get('section_counts', {}), sort_keys=True)}",
+            f"- Classification counts: {json.dumps(summary.get('classification_counts', {}), sort_keys=True)}",
+            "",
+            "## Changes Vs Prior Issue",
+            "",
+            delta.summary_text if delta is not None and delta.summary_text else "No prior issue available for comparison.",
+            "",
+        ]
+    )
+
+    if reference is not None:
+        lines.extend(
+            [
+                "## Reference Rules",
+                "",
+                *(f"- {rule}" for rule in reference.trading_rules_json[:5]),
+                *(f"- {rule}" for rule in reference.classification_rules_json[:5]),
+                "",
+            ]
+        )
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def _build_weekly_intelligence_payload(
+    newsletter: Newsletter,
+    entries: list[WatchlistEntry],
+    brief: IssueBrief | None,
+    delta: IssueDelta | None,
+    reference: WatchlistReferenceRecord | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": PUBLICATION_SCHEMA_VERSION,
+        "week_ended": newsletter.week_ended.isoformat(),
+        "newsletter_id": newsletter.id,
+        "title": newsletter.title,
+        "issue_status": newsletter.issue_status,
+        "source_file": newsletter.source_file,
+        "published_context": {
+            "entry_count": len(entries),
+            "section_counts": dict(Counter(entry.section_name for entry in entries)),
+        },
+        "issue_brief": {
+            "headline": brief.headline if brief is not None else newsletter.title,
+            "executive_summary": brief.executive_summary if brief is not None else newsletter.overall_summary,
+            "watchlist_summary": brief.watchlist_summary_json if brief is not None else _summarize_watchlist_rows(entries),
+            "change_summary": brief.change_summary_json if brief is not None else {},
+            "key_themes": brief.key_themes_json if brief is not None else [],
+            "notable_risks": brief.notable_risks_json if brief is not None else [],
+            "notable_opportunities": brief.notable_opportunities_json if brief is not None else [],
+        },
+        "issue_delta": {
+            "summary_text": delta.summary_text if delta is not None else None,
+            "added_entries": delta.added_entries_json if delta is not None else [],
+            "removed_entries": delta.removed_entries_json if delta is not None else [],
+            "changed_entries": delta.changed_entries_json if delta is not None else [],
+        },
+        "watchlist_reference": _serialize_watchlist_reference(reference),
+    }
+
+
+def _build_publication_manifest(
+    *,
+    newsletter: Newsletter,
+    publication_version: str,
+    publication_run_id: int,
+    output_root: Path,
+    files: dict[str, str],
+    watchlist_payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": PUBLICATION_SCHEMA_VERSION,
+        "publication_run_id": publication_run_id,
+        "publication_version": publication_version,
+        "week_ended": newsletter.week_ended.isoformat(),
+        "newsletter_id": newsletter.id,
+        "title": newsletter.title,
+        "published_at": _utcnow().isoformat(),
+        "output_root": str(output_root),
+        "files": files,
+        "watchlist_count": len(watchlist_payload["watchlist"]),
+    }
 
 
 def _summarize_watchlist_rows(rows: list[Any]) -> dict[str, Any]:
@@ -181,8 +464,9 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
             section.metadata_json = {}
 
     for entry in newsletter.watchlist_entries:
-        if entry.entry_key is None:
-            entry.entry_key = _build_entry_key(newsletter.week_ended, entry)
+        canonical_key = _canonical_entry_key(newsletter, entry)
+        if entry.entry_key != canonical_key:
+            entry.entry_key = canonical_key
         if entry.parser_run_id is None:
             entry.parser_run_id = parser_run.id
         if entry.publication_state is None:
@@ -666,6 +950,30 @@ def _write_text_file(path_str: str, content: str) -> str:
     return str(path)
 
 
+def _get_issue_bundle(session: Any, week_ended: str) -> tuple[Newsletter, list[WatchlistEntry], WatchlistReferenceRecord | None, IssueBrief | None, IssueDelta | None]:
+    newsletter = session.execute(
+        select(Newsletter).where(Newsletter.week_ended == _parse_issue_date(week_ended))
+    ).scalar_one_or_none()
+    if newsletter is None:
+        raise ValueError(f"No newsletter found for {week_ended}")
+
+    entries = session.execute(
+        select(WatchlistEntry)
+        .where(WatchlistEntry.newsletter_id == newsletter.id)
+        .order_by(WatchlistEntry.page_number, WatchlistEntry.id)
+    ).scalars().all()
+    reference = session.execute(
+        select(WatchlistReferenceRecord).where(WatchlistReferenceRecord.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    brief = session.execute(
+        select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    delta = session.execute(
+        select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    return newsletter, entries, reference, brief, delta
+
+
 @mcp.tool()
 def get_watchlist(
     week_ended: str,
@@ -986,6 +1294,122 @@ def export_watchlist_bundle(
         "issue_packages": issue_packages,
         "consolidated": consolidated_outputs,
     }
+
+
+@mcp.tool()
+def publish_issue(
+    week_ended: str,
+    output_dir: str | None = None,
+    publication_version: str | None = None,
+    published_by: str | None = None,
+) -> dict[str, Any]:
+    """Publish one issue into file-based Phase 1 artifacts under the published folder."""
+    base_dir = Path(output_dir) if output_dir is not None else Path.cwd() / "published"
+    if not base_dir.is_absolute():
+        base_dir = Path.cwd() / base_dir
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    with database.session() as session:
+        newsletter, entries, reference, brief, delta = _get_issue_bundle(session, week_ended)
+        if not entries:
+            raise ValueError(f"No watchlist entries found for {week_ended}")
+
+        existing_publication_count = session.execute(
+            select(PublicationRun).where(PublicationRun.newsletter_id == newsletter.id)
+        ).scalars().all()
+        resolved_version = publication_version or f"published-{len(existing_publication_count) + 1}"
+
+        publication_run = PublicationRun(
+            newsletter_id=newsletter.id,
+            publication_version=resolved_version,
+            status="published",
+            published_by=published_by,
+            published_at=_utcnow(),
+            output_root=str(base_dir),
+            manifest_json={},
+            notes=None,
+        )
+        session.add(publication_run)
+        session.flush()
+
+        watchlist_payload = {
+            "schema_version": PUBLICATION_SCHEMA_VERSION,
+            "publication_version": resolved_version,
+            "published_at": publication_run.published_at.isoformat() if publication_run.published_at else _utcnow().isoformat(),
+            "week_ended": newsletter.week_ended.isoformat(),
+            "newsletter_id": newsletter.id,
+            "title": newsletter.title,
+            "source_file": newsletter.source_file,
+            "watchlist": [
+                _build_watchlist_publication_entry(newsletter, entry)
+                for entry in entries
+            ],
+        }
+        weekly_intelligence = _build_weekly_intelligence_payload(newsletter, entries, brief, delta, reference)
+        issue_brief_markdown = _build_issue_brief_markdown(newsletter, brief, delta, reference, entries)
+
+        watchlist_yaml_path = _write_text_file(str(base_dir / "watchlist.yaml"), _serialize_publication_yaml(watchlist_payload))
+        intelligence_path = _write_text_file(
+            str(base_dir / "weekly_intelligence.json"),
+            json.dumps(weekly_intelligence, indent=2),
+        )
+        issue_brief_path = _write_text_file(str(base_dir / "issue_brief.md"), issue_brief_markdown)
+
+        manifest_files = {
+            "watchlist_yaml": watchlist_yaml_path,
+            "weekly_intelligence_json": intelligence_path,
+            "issue_brief_md": issue_brief_path,
+        }
+        manifest = _build_publication_manifest(
+            newsletter=newsletter,
+            publication_version=resolved_version,
+            publication_run_id=publication_run.id,
+            output_root=base_dir,
+            files=manifest_files,
+            watchlist_payload=watchlist_payload,
+        )
+        manifest_path = str(base_dir / "publication_manifest.json")
+        manifest_files["publication_manifest_json"] = manifest_path
+        manifest["files"]["publication_manifest_json"] = manifest_path
+        _write_text_file(
+            manifest_path,
+            json.dumps(manifest, indent=2),
+        )
+        publication_run.manifest_json = manifest
+
+        artifact_specs = [
+            ("watchlist_yaml", watchlist_yaml_path, _serialize_publication_yaml(watchlist_payload), len(watchlist_payload["watchlist"])),
+            ("weekly_intelligence_json", intelligence_path, json.dumps(weekly_intelligence, indent=2), len(entries)),
+            ("issue_brief_md", issue_brief_path, issue_brief_markdown, None),
+            ("publication_manifest_json", manifest_path, json.dumps(manifest, indent=2), None),
+        ]
+        for artifact_type, file_path, content, row_count in artifact_specs:
+            session.add(
+                PublicationArtifact(
+                    publication_run_id=publication_run.id,
+                    artifact_type=artifact_type,
+                    file_path=file_path,
+                    file_hash=_sha256_text(content),
+                    row_count=row_count,
+                    metadata_json={},
+                )
+            )
+
+        for entry in entries:
+            entry.tradeable, entry.blocked_reason = _derive_entry_tradeability(entry, _parse_spread_legs(entry.spread_code))
+            entry.publication_state = "published"
+
+        newsletter.issue_status = "published"
+        newsletter.published_at = publication_run.published_at
+
+        return {
+            "week_ended": newsletter.week_ended.isoformat(),
+            "publication_version": resolved_version,
+            "publication_run_id": publication_run.id,
+            "output_dir": str(base_dir),
+            "files": manifest_files,
+            "watchlist_count": len(watchlist_payload["watchlist"]),
+        }
 
 
 @mcp.tool()
