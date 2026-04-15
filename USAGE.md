@@ -142,3 +142,43 @@ Key outputs:
 - Treat `watchlist_references` as interpretation metadata, not live trades.
 - Use `section_name` to separate intra/inter exports.
 - For older issues, expect `portfolio` and `risk_level` instead of `trade_quality`.
+
+## Sunday workflow
+
+Recommended Sunday sequence:
+
+1. `newsletter-mcp`
+   Ingest the new PDF and validate the issue.
+2. `newsletter-mcp`
+   Review `get_issue_summary(...)`, `get_watchlist(...)`, and `get_watchlist_reference(...)`.
+3. `newsletter-mcp`
+   Run `publish_issue(...)` for the approved week.
+4. `newsletter-mcp`
+   Generate any CSV/package exports needed for review.
+5. `schwab-smartspreads-file`
+   Verify the file-based Schwab workflow is reading the published watchlist.
+
+Suggested Sunday ask:
+
+```text
+Use newsletter-mcp first, then schwab-smartspreads-file. Ingest the latest newsletter, validate the watchlist and reference rules, publish the approved issue, and confirm the file-based Schwab MCP is reading the published watchlist correctly.
+```
+
+## Daily workflow
+
+Recommended Daily sequence:
+
+1. `schwab-smartspreads-file`
+   Check stream health, watchlist pricing, and current futures positions.
+2. `newsletter-mcp`
+   Pull the current week’s intelligence, watchlist reference rules, and issue summary.
+3. Claude combines both sources into:
+   - morning brief
+   - action plan
+   - alignment check between current positions and weekly watchlist
+
+Suggested Daily ask:
+
+```text
+Use newsletter-mcp and schwab-smartspreads-file. Give me a morning brief using the current published newsletter week, my live positions, current watchlist pricing, and the rules that matter for interpreting today’s setups.
+```
