@@ -83,6 +83,8 @@ This milestone makes the data easier to integrate into downstream systems.
 ### Should Have
 
 - [ ] Add rules-aware report generation using watchlist rows plus reference rules
+- [x] Add strategy/doctrine knowledge layer from the Smart Spreads strategy manual
+- [ ] Integrate strategy principles into weekly issue briefs and Daily action-plan explanations
 - [ ] Add historical comparison helpers across old and new scoring systems
 - [ ] Add notebook/dashboard workflow for exploration
 - [ ] Add watchlist change summaries such as added, removed, and upgraded/downgraded ideas across weeks
@@ -154,6 +156,7 @@ This milestone improves maintainability and team workflow.
 
 - Use `watchlist_entries` as the live trade/export layer.
 - Use `watchlist_references` as the interpretation and rules layer.
+- Use `strategy_documents`, `strategy_sections`, and `strategy_principles` as the durable doctrine layer behind newsletter and Daily interpretation.
 - Keep `intra_commodity` and `inter_commodity` exports explicit in every workflow.
 - The newsletters contain additional high-value sections beyond the watchlist, especially trade calendar, margin summary, macro commentary, and strategy notes.
 - Brief generation should combine structured rows plus narrative sections instead of summarizing only raw text.
