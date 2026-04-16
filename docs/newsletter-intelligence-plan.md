@@ -124,6 +124,49 @@ Core tables:
 - `daily_action_plans`
 - `daily_position_analysis`
 
+### Daily workflow minimum requirements
+
+The Daily workflow should assume:
+
+- the TOS account statement is downloaded during market hours and dropped into the Schwab MCP `config/` folder
+- a TOS screenshot is also provided for validation/context
+- Schwab MCP tools ingest positions from the TOS statement
+- Schwab MCP tools provide live or latest-available market data for each leg
+- Schwab MCP remains the calculation layer for spread values and P/L
+- Newsletter MCP provides weekly intelligence, rules, exits, and interpretation
+
+This is necessary because the Schwab API cannot be relied on to return futures positions for this workflow.
+
+### Reuse, do not rebuild
+
+Daily workflow should reuse the existing Schwab MCP operational implementation.
+
+That means:
+- do not rebuild TOS statement ingestion in Newsletter MCP
+- do not rebuild spread-value and P/L calculations in Newsletter MCP
+- do not replace the current Schwab-side daily markdown structure unless there is a strong reason
+
+Instead, Daily workflow design should:
+- keep Schwab MCP as the operational engine
+- use Newsletter MCP as the weekly intelligence and history layer
+- let Claude combine both into the final daily report and action plan
+
+### Seed daily report contract
+
+The current Claude-generated daily markdown should be treated as the seed contract for Daily workflow v1.
+
+Current sections already provide a strong starting point:
+- live watchlist values
+- open positions from TOS CSV
+- spread value calculations
+- complete open-position P/L
+- changes vs yesterday
+- watchlist conflicts
+- exit schedule
+- portfolio summary
+- current portfolio status
+- next actions
+
 ## Implementation plan
 
 ### Step 1: Foundation

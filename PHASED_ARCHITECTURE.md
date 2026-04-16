@@ -36,6 +36,20 @@ Purpose:
 
 Daily output is operational guidance, not source extraction.
 
+### Daily workflow minimum requirements
+
+During market hours, the minimum operational flow is:
+
+1. Download the TOS account statement and place it into the Schwab MCP `config/` folder
+2. Provide a TOS screenshot for validation/context
+3. Use Schwab MCP tools to read open futures positions from the TOS statement
+4. Use Schwab MCP tools to fetch live or latest-available market data for each leg
+5. Calculate spread values and current P/L from the Schwab MCP side
+6. Use Newsletter MCP to add weekly intelligence, rules, conflicts, exits, and interpretation
+7. Produce the daily markdown report and action plan
+
+This design exists because the Schwab API does not reliably return futures positions; in practice it is limited to stocks and options for this workflow.
+
 ## Recommended system boundaries
 
 ### Newsletter MCP
@@ -60,6 +74,22 @@ Owns:
 - daily checks
 - daily operational reporting
 - operational database
+
+Daily workflow should reuse existing Schwab MCP tools rather than rebuild that logic elsewhere.
+
+In particular, Schwab MCP remains the operational engine for:
+- TOS statement ingestion
+- live leg pricing
+- spread-value calculations
+- current P/L
+- daily operational markdown generation
+
+Newsletter MCP should augment this with:
+- weekly themes
+- watchlist rules
+- issue briefs
+- issue deltas
+- newsletter-aligned conflict and exit interpretation
 
 ## Two data domains
 
@@ -260,6 +290,24 @@ The two MCPs should share a contract, not a writable DB.
 4. Calculate daily P/L and operational changes
 5. Produce daily report and action plan
 6. In Phase 2, persist daily operational memory
+
+### Seed daily report contract
+
+The current Claude-generated markdown from Schwab MCP should be treated as the seed report contract for Daily workflow v1.
+
+The current useful sections are:
+- live watchlist values
+- open positions from TOS CSV
+- spread value calculations
+- complete open-position P/L
+- position changes vs yesterday
+- watchlist conflicts
+- exit schedule
+- portfolio summary
+- current portfolio status
+- next actions
+
+The design goal is to formalize and persist this workflow, not replace it with a brand-new reporting format.
 
 ## Architectural conclusions
 
