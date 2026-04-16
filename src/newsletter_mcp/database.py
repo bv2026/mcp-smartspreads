@@ -322,6 +322,9 @@ class SchwabFuturesCatalog(Base):
     trading_hours: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_micro: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     stream_supported: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    native_spread_support: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    manual_legs_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    support_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -465,6 +468,9 @@ class Database:
             self._column_sql("boolean", nullable=False, default="0"),
         )
         self._add_column_if_missing("schwab_futures_catalog", "stream_supported", self._column_sql("boolean"))
+        self._add_column_if_missing("schwab_futures_catalog", "native_spread_support", self._column_sql("boolean"))
+        self._add_column_if_missing("schwab_futures_catalog", "manual_legs_required", self._column_sql("boolean"))
+        self._add_column_if_missing("schwab_futures_catalog", "support_notes", self._column_sql("text"))
         self._add_column_if_missing("schwab_futures_catalog", "source_file", self._column_sql("text"))
         self._add_column_if_missing(
             "schwab_futures_catalog",

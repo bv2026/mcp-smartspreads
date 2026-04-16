@@ -64,6 +64,23 @@ class SymbolCatalogTests(unittest.TestCase):
         self.assertEqual(rows[1].category, "Stock Indices")
         self.assertEqual(rows[1].settlement_type, "Cash")
 
+    def test_upsert_schwab_futures_support_updates_operational_flags(self) -> None:
+        server.import_schwab_futures_catalog(str(self.csv_path))
+
+        result = server.upsert_schwab_futures_support(
+            "/VXM",
+            stream_supported=False,
+            native_spread_support=False,
+            manual_legs_required=True,
+            support_notes="Manual legs required in TOS for this workflow.",
+        )
+
+        self.assertEqual(result["updated"], "/VXM")
+        self.assertEqual(result["row"]["stream_supported"], False)
+        self.assertEqual(result["row"]["native_spread_support"], False)
+        self.assertEqual(result["row"]["manual_legs_required"], True)
+        self.assertEqual(result["row"]["support_notes"], "Manual legs required in TOS for this workflow.")
+
     def test_list_schwab_futures_catalog_filters_by_category(self) -> None:
         server.import_schwab_futures_catalog(str(self.csv_path))
 
@@ -110,6 +127,28 @@ class SymbolCatalogTests(unittest.TestCase):
         self.assertEqual(root, "VX")
         self.assertIsNone(blocked_reason)
         self.assertEqual(tos_symbol, "/VXMN26")
+
+    def test_parse_spread_legs_includes_support_flags(self) -> None:
+        server.import_schwab_futures_catalog(str(self.csv_path))
+        server.upsert_schwab_futures_support(
+            "/VXM",
+            stream_supported=False,
+            native_spread_support=False,
+            manual_legs_required=True,
+            support_notes="Manual legs required in TOS for this workflow.",
+        )
+        server.upsert_newsletter_commodity_mapping(
+            newsletter_root="VX",
+            commodity_name="VIX",
+            preferred_schwab_root="/VXM",
+            category="Index",
+        )
+
+        legs = server._parse_spread_legs("VXN26-VXU26")
+
+        self.assertEqual([leg["tos_symbol"] for leg in legs], ["/VXMN26", "/VXMU26"])
+        self.assertEqual([leg["manual_legs_required"] for leg in legs], [True, True])
+        self.assertEqual([leg["native_spread_support"] for leg in legs], [False, False])
 
     def test_parse_newsletter_commodity_rows_extracts_details(self) -> None:
         raw_text = (

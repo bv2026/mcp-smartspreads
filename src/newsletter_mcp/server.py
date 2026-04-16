@@ -242,6 +242,7 @@ def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
         operator = sign or "+"
         tos_symbol, blocked_reason, root = _tos_symbol_for_contract(contract_code)
         resolution = _resolve_newsletter_root_symbol(root)
+        support = _load_schwab_catalog_support(resolution["schwab_root"])
         for copy_index in range(multiplier):
             legs.append(
                 {
@@ -255,6 +256,10 @@ def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
                     "tos_symbol": tos_symbol,
                     "tradeable": blocked_reason is None,
                     "blocked_reason": blocked_reason,
+                    "stream_supported": support["stream_supported"],
+                    "native_spread_support": support["native_spread_support"],
+                    "manual_legs_required": support["manual_legs_required"],
+                    "support_notes": support["support_notes"],
                 }
             )
     return legs
@@ -526,10 +531,43 @@ def _serialize_schwab_catalog_row(record: SchwabFuturesCatalog) -> dict[str, Any
         "trading_hours": record.trading_hours,
         "is_micro": record.is_micro,
         "stream_supported": record.stream_supported,
+        "native_spread_support": record.native_spread_support,
+        "manual_legs_required": record.manual_legs_required,
+        "support_notes": record.support_notes,
         "is_active": record.is_active,
         "source_file": record.source_file,
         "source_modified_at": record.source_modified_at.isoformat() if record.source_modified_at else None,
     }
+
+
+def _load_schwab_catalog_support(symbol_root: str | None) -> dict[str, Any]:
+    if not symbol_root:
+        return {
+            "stream_supported": None,
+            "native_spread_support": None,
+            "manual_legs_required": None,
+            "support_notes": None,
+        }
+    with database.session() as session:
+        record = session.execute(
+            select(SchwabFuturesCatalog).where(
+                SchwabFuturesCatalog.symbol_root == symbol_root,
+                SchwabFuturesCatalog.is_active.is_(True),
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            return {
+                "stream_supported": None,
+                "native_spread_support": None,
+                "manual_legs_required": None,
+                "support_notes": None,
+            }
+        return {
+            "stream_supported": record.stream_supported,
+            "native_spread_support": record.native_spread_support,
+            "manual_legs_required": record.manual_legs_required,
+            "support_notes": record.support_notes,
+        }
 
 
 def _build_issue_brief_markdown(
@@ -1291,6 +1329,38 @@ def list_schwab_futures_catalog(limit: int = 25, category: str | None = None) ->
             "count": len(rows),
             "categories": dict(categories),
             "rows": [_serialize_schwab_catalog_row(row) for row in rows],
+        }
+
+
+@mcp.tool()
+def upsert_schwab_futures_support(
+    symbol_root: str,
+    *,
+    stream_supported: bool | None = None,
+    native_spread_support: bool | None = None,
+    manual_legs_required: bool | None = None,
+    support_notes: str | None = None,
+) -> dict[str, Any]:
+    """Update operational support flags for a Schwab futures symbol."""
+    normalized_root = symbol_root.strip().upper()
+    if not normalized_root.startswith("/"):
+        normalized_root = f"/{normalized_root.lstrip('/')}"
+
+    with database.session() as session:
+        record = session.execute(
+            select(SchwabFuturesCatalog).where(SchwabFuturesCatalog.symbol_root == normalized_root)
+        ).scalar_one_or_none()
+        if record is None:
+            raise ValueError(f"No Schwab futures catalog row found for {normalized_root}")
+
+        record.stream_supported = stream_supported
+        record.native_spread_support = native_spread_support
+        record.manual_legs_required = manual_legs_required
+        record.support_notes = support_notes
+
+        return {
+            "updated": normalized_root,
+            "row": _serialize_schwab_catalog_row(record),
         }
 
 
