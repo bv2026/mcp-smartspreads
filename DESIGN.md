@@ -150,6 +150,20 @@ This gives:
 - easy downstream integration
 - room for future analytics and reporting
 
+## Symbol normalization
+
+The next important normalization layer should move symbol/root mapping out of hardcoded code tables and into the database.
+
+Recommended model:
+
+- `schwab_futures_catalog`
+  authoritative catalog of Schwab/TOS futures roots and product metadata
+
+- `newsletter_commodity_catalog`
+  authoritative catalog of newsletter commodity roots plus preferred Schwab/TOS mappings and policy blocks
+
+This layer is needed because the newsletter and Schwab are separate naming systems, and publication logic needs a data-driven crosswalk rather than a fixed dictionary in code.
+
 ## Main tradeoffs
 
 ### Strengths

@@ -31,6 +31,11 @@ Phase 1 adds the intelligence and publication layers on top:
 - `publication_runs`
 - `publication_artifacts`
 
+The next schema extension after Phase 1 should add the symbol normalization layer:
+
+- `schwab_futures_catalog`
+- `newsletter_commodity_catalog`
+
 ## Naming note
 
 The business concept is a `newsletter_issue`, but the current code and schema already use `newsletters`.
@@ -217,6 +222,60 @@ Suggested `brief_status` values:
 - `approved`
 
 This is the core table for newsletter intelligence output in Phase 1.
+
+## Next schema extension: symbol catalogs
+
+After Phase 1, the recommended next database extension is a DB-backed symbol normalization layer.
+
+### `schwab_futures_catalog`
+
+Purpose:
+- authoritative list of Schwab/TOS futures products and roots
+
+Suggested columns:
+- `id`
+- `symbol_root`
+- `display_name`
+- `exchange`
+- `category`
+- `multiplier`
+- `minimum_tick`
+- `settlement_type`
+- `trading_hours`
+- `options_tradable`
+- `is_micro`
+- `streaming_supported`
+- `contract_notes`
+- `source_file`
+- `source_updated_at`
+- `is_active`
+- `metadata`
+
+### `newsletter_commodity_catalog`
+
+Purpose:
+- authoritative list of newsletter commodity roots and preferred Schwab/TOS mappings
+
+Suggested columns:
+- `id`
+- `newsletter_root`
+- `commodity_name`
+- `exchange`
+- `category`
+- `contract_notes`
+- `default_side_notes`
+- `preferred_schwab_root`
+- `alternate_schwab_roots_json`
+- `is_tradeable_by_policy`
+- `policy_block_reason`
+- `mapping_confidence`
+- `mapping_notes`
+- `source_issue_week`
+- `source_page_number`
+- `is_active`
+- `metadata`
+
+These catalogs should replace the long-term need for a hardcoded root-symbol mapping table in application code.
 
 ### 7. `issue_deltas`
 
