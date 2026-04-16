@@ -352,6 +352,18 @@ class NewsletterCommodityCatalog(Base):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
 
+class ContractMonthCode(Base):
+    __tablename__ = "contract_month_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    month_code: Mapped[str] = mapped_column(String(4), nullable=False, unique=True)
+    month_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_issue_week: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+
 class Database:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -371,6 +383,7 @@ class Database:
         self._ensure_watchlist_references_phase1_columns()
         self._ensure_schwab_futures_catalog_columns()
         self._ensure_newsletter_commodity_catalog_columns()
+        self._ensure_contract_month_codes_columns()
 
     def _ensure_newsletters_phase1_columns(self) -> None:
         self._add_column_if_missing("newsletters", "issue_code", self._column_sql("text"))
@@ -516,6 +529,26 @@ class Database:
             self._column_sql("json", nullable=False, default="'{}'"),
         )
 
+    def _ensure_contract_month_codes_columns(self) -> None:
+        self._add_column_if_missing("contract_month_codes", "month_code", self._column_sql("text"))
+        self._add_column_if_missing("contract_month_codes", "month_name", self._column_sql("text"))
+        self._add_column_if_missing("contract_month_codes", "sort_order", self._column_sql("integer"))
+        self._add_column_if_missing(
+            "contract_month_codes",
+            "source_issue_week",
+            self._column_sql("date"),
+        )
+        self._add_column_if_missing(
+            "contract_month_codes",
+            "source_page_number",
+            self._column_sql("integer"),
+        )
+        self._add_column_if_missing(
+            "contract_month_codes",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
     def _create_phase1_indexes(self) -> None:
         index_statements = [
             "create index if not exists idx_newsletters_issue_status on newsletters (issue_status)",
@@ -535,6 +568,7 @@ class Database:
             "create index if not exists idx_schwab_futures_catalog_category on schwab_futures_catalog (category)",
             "create unique index if not exists idx_newsletter_commodity_catalog_root on newsletter_commodity_catalog (newsletter_root)",
             "create index if not exists idx_newsletter_commodity_catalog_preferred_root on newsletter_commodity_catalog (preferred_schwab_root)",
+            "create unique index if not exists idx_contract_month_codes_code on contract_month_codes (month_code)",
         ]
         with self.engine.begin() as connection:
             for statement in index_statements:

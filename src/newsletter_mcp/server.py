@@ -16,6 +16,7 @@ from sqlalchemy import desc, select
 from .config import Settings
 from .business import IssueBriefDraft, IssueBriefService
 from .database import (
+    ContractMonthCode,
     Database,
     IssueBrief,
     IssueDelta,
@@ -78,6 +79,20 @@ database = Database(settings.database_url)
 database.create_schema()
 mcp = FastMCP("newsletter-mcp")
 DEFAULT_SCHWAB_CATALOG_CSV = Path(r"C:\Users\vsbra\OneDrive\Downloads1\futures-tradelog - Sheet13.csv")
+MONTH_NAME_ORDER = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
 
 
 def _utcnow() -> datetime:
@@ -390,6 +405,48 @@ def _parse_newsletter_commodity_rows(raw_text: str) -> list[dict[str, Any]]:
             }
         )
 
+    return rows
+
+
+def _parse_contract_month_codes(raw_text: str) -> list[dict[str, Any]]:
+    details_text = _extract_commodity_details_text(raw_text)
+    if not details_text:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    sort_lookup = {name.lower(): index for index, name in enumerate(MONTH_NAME_ORDER, start=1)}
+
+    def month_pattern(name: str) -> str:
+        return r"\s*".join(re.escape(char) for char in name)
+
+    month_code_map = {
+        "January": "F",
+        "February": "G",
+        "March": "H",
+        "April": "J",
+        "May": "K",
+        "June": "M",
+        "July": "N",
+        "August": "Q",
+        "September": "U",
+        "October": "V",
+        "November": "X",
+        "December": "Z",
+    }
+
+    for month_name in MONTH_NAME_ORDER:
+        month_code = month_code_map[month_name]
+        pattern = rf"{month_pattern(month_name)}\s+{re.escape(month_code)}"
+        if re.search(pattern, details_text, flags=re.IGNORECASE):
+            rows.append(
+                {
+                    "month_code": month_code,
+                    "month_name": month_name,
+                    "sort_order": sort_lookup[month_name.lower()],
+                }
+            )
+
+    rows.sort(key=lambda row: row["sort_order"])
     return rows
 
 
@@ -1396,6 +1453,87 @@ def import_newsletter_commodity_catalog(week_ended: str | None = None) -> dict[s
             "imported_count": imported,
             "updated_count": updated,
             "newsletter_roots": [row["newsletter_root"] for row in parsed_rows],
+        }
+
+
+@mcp.tool()
+def import_contract_month_codes(week_ended: str | None = None) -> dict[str, Any]:
+    """Import contract month-code mappings from the Commodity Details page of an issue."""
+    with database.session() as session:
+        if week_ended:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == _parse_issue_date(week_ended))
+            ).scalar_one_or_none()
+            if newsletter is None:
+                raise ValueError(f"No newsletter found for {week_ended}")
+        else:
+            newsletter = session.execute(
+                select(Newsletter).order_by(desc(Newsletter.week_ended))
+            ).scalars().first()
+            if newsletter is None:
+                raise ValueError("No newsletters available to import month codes from.")
+
+        parsed_rows = _parse_contract_month_codes(newsletter.raw_text)
+        if not parsed_rows:
+            raise ValueError(
+                f"No contract month codes were parsed from newsletter {newsletter.week_ended.isoformat()}."
+            )
+
+        imported = 0
+        updated = 0
+        for row in parsed_rows:
+            existing = session.execute(
+                select(ContractMonthCode).where(ContractMonthCode.month_code == row["month_code"])
+            ).scalar_one_or_none()
+
+            if existing is None:
+                session.add(
+                    ContractMonthCode(
+                        month_code=row["month_code"],
+                        month_name=row["month_name"],
+                        sort_order=row["sort_order"],
+                        source_issue_week=newsletter.week_ended,
+                        source_page_number=2,
+                        metadata_json={},
+                    )
+                )
+                imported += 1
+                continue
+
+            existing.month_name = row["month_name"]
+            existing.sort_order = row["sort_order"]
+            existing.source_issue_week = newsletter.week_ended
+            existing.source_page_number = 2
+            updated += 1
+
+        return {
+            "week_ended": newsletter.week_ended.isoformat(),
+            "row_count": len(parsed_rows),
+            "imported_count": imported,
+            "updated_count": updated,
+            "month_codes": [row["month_code"] for row in parsed_rows],
+        }
+
+
+@mcp.tool()
+def list_contract_month_codes() -> dict[str, Any]:
+    """List the stored contract month-code mappings."""
+    with database.session() as session:
+        rows = session.execute(
+            select(ContractMonthCode).order_by(ContractMonthCode.sort_order)
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "rows": [
+                {
+                    "month_code": row.month_code,
+                    "month_name": row.month_name,
+                    "sort_order": row.sort_order,
+                    "source_issue_week": row.source_issue_week.isoformat() if row.source_issue_week else None,
+                    "source_page_number": row.source_page_number,
+                }
+                for row in rows
+            ],
         }
 
 

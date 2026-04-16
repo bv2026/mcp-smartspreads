@@ -9,7 +9,7 @@ from unittest import mock
 from sqlalchemy import select
 
 from newsletter_mcp import server
-from newsletter_mcp.database import Database, Newsletter, NewsletterCommodityCatalog, SchwabFuturesCatalog
+from newsletter_mcp.database import ContractMonthCode, Database, Newsletter, NewsletterCommodityCatalog, SchwabFuturesCatalog
 
 
 CATALOG_CSV = """Micros,,,,,,
@@ -165,6 +165,59 @@ class SymbolCatalogTests(unittest.TestCase):
         self.assertEqual([row.newsletter_root for row in rows], ["CL", "KW", "VX"])
         self.assertEqual(rows[1].preferred_schwab_root, "/KE")
         self.assertEqual(rows[1].source_issue_week, date(2026, 4, 10))
+
+    def test_parse_contract_month_codes_extracts_full_calendar(self) -> None:
+        raw_text = (
+            "Commodity  Details Month Symbol "
+            "January F February G March H April J May K June M "
+            "July N August Q September U October V November X December Z "
+            "Commodity Exchange $/Unit "
+            "Crude Oil (WTI) NYMEX 1,000 CL CL "
+            "What to Expect From"
+        )
+
+        rows = server._parse_contract_month_codes(raw_text)
+
+        self.assertEqual(len(rows), 12)
+        self.assertEqual(rows[0], {"month_code": "F", "month_name": "January", "sort_order": 1})
+        self.assertEqual(rows[-1], {"month_code": "Z", "month_name": "December", "sort_order": 12})
+
+    def test_import_contract_month_codes_from_issue(self) -> None:
+        with self.database.session() as session:
+            session.add(
+                Newsletter(
+                    source_file="months.pdf",
+                    file_hash="months-hash",
+                    title="Week Ended 2026-04-10",
+                    week_ended=date(2026, 4, 10),
+                    raw_text=(
+                        "Commodity  Details Month Symbol "
+                        "January F February G March H April J May K June M "
+                        "July N August Q September U October V November X December Z "
+                        "Commodity Exchange $/Unit "
+                        "Crude Oil (WTI) NYMEX 1,000 CL CL "
+                        "What to Expect From"
+                    ),
+                    overall_summary="summary",
+                    metadata_json={},
+                )
+            )
+
+        result = server.import_contract_month_codes("2026-04-10")
+
+        self.assertEqual(result["row_count"], 12)
+        self.assertEqual(result["imported_count"], 12)
+
+        listing = server.list_contract_month_codes()
+        self.assertEqual(listing["count"], 12)
+        self.assertEqual(listing["rows"][0]["month_code"], "F")
+        self.assertEqual(listing["rows"][0]["month_name"], "January")
+
+        with self.database.session() as session:
+            stored = session.execute(
+                select(ContractMonthCode).where(ContractMonthCode.month_code == "U")
+            ).scalar_one()
+        self.assertEqual(stored.month_name, "September")
 
 
 if __name__ == "__main__":

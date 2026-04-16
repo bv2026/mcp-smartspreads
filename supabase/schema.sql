@@ -182,6 +182,16 @@ create table if not exists public.newsletter_commodity_catalog (
   metadata jsonb not null default '{}'::jsonb
 );
 
+create table if not exists public.contract_month_codes (
+  id bigserial primary key,
+  month_code text not null unique,
+  month_name text not null,
+  sort_order integer not null,
+  source_issue_week date,
+  source_page_number integer,
+  metadata jsonb not null default '{}'::jsonb
+);
+
 create index if not exists idx_newsletters_week_ended on public.newsletters (week_ended desc);
 create index if not exists idx_newsletters_issue_status on public.newsletters (issue_status);
 create index if not exists idx_parser_runs_newsletter_id on public.parser_runs (newsletter_id);
@@ -204,6 +214,7 @@ create unique index if not exists idx_schwab_futures_catalog_symbol_root on publ
 create index if not exists idx_schwab_futures_catalog_category on public.schwab_futures_catalog (category);
 create unique index if not exists idx_newsletter_commodity_catalog_root on public.newsletter_commodity_catalog (newsletter_root);
 create index if not exists idx_newsletter_commodity_catalog_preferred_root on public.newsletter_commodity_catalog (preferred_schwab_root);
+create unique index if not exists idx_contract_month_codes_code on public.contract_month_codes (month_code);
 
 alter table public.newsletters enable row level security;
 alter table public.parser_runs enable row level security;
@@ -216,6 +227,7 @@ alter table public.publication_runs enable row level security;
 alter table public.publication_artifacts enable row level security;
 alter table public.schwab_futures_catalog enable row level security;
 alter table public.newsletter_commodity_catalog enable row level security;
+alter table public.contract_month_codes enable row level security;
 
 create policy "service role full access newsletters"
 on public.newsletters
@@ -289,6 +301,13 @@ with check (true);
 
 create policy "service role full access newsletter_commodity_catalog"
 on public.newsletter_commodity_catalog
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access contract_month_codes"
+on public.contract_month_codes
 for all
 to service_role
 using (true)
