@@ -258,6 +258,23 @@ Phase 1 is complete enough to move into Daily workflow and Phase 2 design work.
 
 ### Phase 2 success
 
+Phase 2 is complete for the currently intended Daily-operational scope.
+
+Implemented in Phase 2:
+- canonical Daily input model using one TOS CSV and one TOS screenshot
+- reuse of Schwab MCP for positions, live/latest pricing, spread values, and P/L
+- newsletter-history-backed exit schedule resolution for open positions
+- broker-root-aware symbol matching and quantity-aware butterfly matching
+- higher-level `get_daily_exit_schedule(...)` Daily tool
+- strategy/doctrine ingestion from the Smart Spreads strategy manual
+- updated Daily prompts and usage guidance for Claude
+
+Deferred to Phase 3:
+- validated YTD portfolio rollups
+- snapshot-based "vs yesterday" state
+- persisted Daily reports, action plans, and learning memory
+- deeper strategy-aware commentary inside weekly and Daily generated outputs
+
 - daily decisions can be linked back to weekly intelligence
 - daily operational memory is preserved
 - the system can learn from both newsletters and portfolio actions

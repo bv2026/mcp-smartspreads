@@ -239,6 +239,25 @@ Do not collapse both systems into one shared multi-owner SQLite database.
 - compare actual held positions with newsletter recommendations
 - build learning loops across weeks and days
 
+### Phase 2 completion status
+
+Phase 2 is now complete for the currently intended scope.
+
+Completed outcomes:
+- the Daily workflow is operational through Schwab MCP plus Newsletter MCP orchestration
+- canonical TOS CSV and screenshot inputs are part of the documented Daily run
+- Schwab MCP remains the operational engine for positions, watchlist pricing, spread valuation, and P/L
+- Newsletter MCP resolves newsletter-history-backed exit schedules for current and legacy open positions
+- broker-root normalization and quantity-aware butterfly matching are in place
+- the Smart Spreads strategy manual is ingested as a doctrine layer and queryable from Claude
+- operator prompts and usage docs are aligned with the implemented Daily workflow
+
+What remains after Phase 2 is Phase 3 work:
+- validated YTD portfolio rollups
+- persisted Daily memory and snapshots
+- richer Daily learning loops and action-plan history
+- further strategy-aware explanation inside generated briefs
+
 ## Database philosophy
 
 The newsletter database must be the memory layer.
