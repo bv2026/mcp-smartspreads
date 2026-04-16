@@ -95,6 +95,61 @@ Why:
 - fast parser iteration
 - zero setup
 
+## Storage recommendation
+
+The recommended architecture is:
+
+- relational DB as the system of record
+- published files as the integration boundary
+- JSON as an artifact format, not the primary source of truth
+
+### Why not file-only
+
+File-only storage is fine for exports and handoff, but it is weak as the historical memory layer.
+
+With file-only storage, cross-week intelligence becomes harder to:
+- query
+- compare
+- audit
+- evolve safely
+
+That is exactly the weakness in the pre-database workflow:
+- extract
+- publish
+- forget
+
+### Why not JSON-first / NoSQL-first
+
+JSON documents are useful for nested payloads and publication outputs, but they should not be the canonical store for this project.
+
+This dataset is naturally relational:
+- issues
+- watchlist rows
+- reference rules
+- briefs
+- deltas
+- publication runs
+
+Those entities benefit from:
+- stable identifiers
+- joins and comparisons
+- explicit schema evolution
+- structured historical queries
+
+### Recommended hybrid
+
+The best practical model is:
+
+1. relational DB for normalized intelligence history
+2. files for downstream consumption
+3. optional JSON payloads inside the DB or in exports for richer nested details
+
+This gives:
+- persistent memory
+- operational simplicity
+- easy downstream integration
+- room for future analytics and reporting
+
 ## Main tradeoffs
 
 ### Strengths

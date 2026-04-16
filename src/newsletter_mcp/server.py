@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-from collections import Counter
 import hashlib
 from datetime import UTC, date, datetime, timedelta
 import json
@@ -14,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from sqlalchemy import desc, select
 
 from .config import Settings
+from .business import IssueBriefDraft, IssueBriefService
 from .database import (
     Database,
     IssueBrief,
@@ -265,46 +265,16 @@ def _build_issue_brief_markdown(
     reference: WatchlistReferenceRecord | None,
     entries: list[WatchlistEntry],
 ) -> str:
-    lines = [
-        f"# SmartSpreads Issue Brief - {newsletter.week_ended.isoformat()}",
-        "",
-        f"- Title: {newsletter.title}",
-        f"- Week Ended: {newsletter.week_ended.isoformat()}",
-        f"- Entry Count: {len(entries)}",
-        "",
-        "## Executive Summary",
-        "",
-        brief.executive_summary if brief is not None else newsletter.overall_summary,
-        "",
-        "## Watchlist Summary",
-        "",
-    ]
-    summary = brief.watchlist_summary_json if brief is not None else _summarize_watchlist_rows(entries)
-    lines.extend(
-        [
-            f"- Total entries: {summary.get('entry_count', len(entries))}",
-            f"- Section counts: {json.dumps(summary.get('section_counts', {}), sort_keys=True)}",
-            f"- Classification counts: {json.dumps(summary.get('classification_counts', {}), sort_keys=True)}",
-            "",
-            "## Changes Vs Prior Issue",
-            "",
-            delta.summary_text if delta is not None and delta.summary_text else "No prior issue available for comparison.",
-            "",
-        ]
+    brief_data = _issue_brief_fallback(newsletter, entries, delta, reference, brief)
+    return IssueBriefService.build_issue_brief_markdown(
+        week_ended=newsletter.week_ended.isoformat(),
+        title=newsletter.title,
+        executive_summary=brief_data.executive_summary,
+        entries=entries,
+        brief_data=brief_data,
+        delta_summary_text=delta.summary_text if delta is not None else None,
+        reference=reference,
     )
-
-    if reference is not None:
-        lines.extend(
-            [
-                "## Reference Rules",
-                "",
-                *(f"- {rule}" for rule in reference.trading_rules_json[:5]),
-                *(f"- {rule}" for rule in reference.classification_rules_json[:5]),
-                "",
-            ]
-        )
-
-    return "\n".join(lines).strip() + "\n"
 
 
 def _build_weekly_intelligence_payload(
@@ -314,6 +284,7 @@ def _build_weekly_intelligence_payload(
     delta: IssueDelta | None,
     reference: WatchlistReferenceRecord | None,
 ) -> dict[str, Any]:
+    brief_data = _issue_brief_fallback(newsletter, entries, delta, reference, brief)
     return {
         "schema_version": PUBLICATION_SCHEMA_VERSION,
         "week_ended": newsletter.week_ended.isoformat(),
@@ -323,16 +294,16 @@ def _build_weekly_intelligence_payload(
         "source_file": newsletter.source_file,
         "published_context": {
             "entry_count": len(entries),
-            "section_counts": dict(Counter(entry.section_name for entry in entries)),
+            "section_counts": brief_data.watchlist_summary.get("section_counts", {}),
         },
         "issue_brief": {
-            "headline": brief.headline if brief is not None else newsletter.title,
-            "executive_summary": brief.executive_summary if brief is not None else newsletter.overall_summary,
-            "watchlist_summary": brief.watchlist_summary_json if brief is not None else _summarize_watchlist_rows(entries),
-            "change_summary": brief.change_summary_json if brief is not None else {},
-            "key_themes": brief.key_themes_json if brief is not None else [],
-            "notable_risks": brief.notable_risks_json if brief is not None else [],
-            "notable_opportunities": brief.notable_opportunities_json if brief is not None else [],
+            "headline": brief_data.headline,
+            "executive_summary": brief_data.executive_summary,
+            "watchlist_summary": brief_data.watchlist_summary,
+            "change_summary": brief_data.change_summary,
+            "key_themes": brief_data.key_themes,
+            "notable_risks": brief_data.notable_risks,
+            "notable_opportunities": brief_data.notable_opportunities,
         },
         "issue_delta": {
             "summary_text": delta.summary_text if delta is not None else None,
@@ -364,17 +335,54 @@ def _build_publication_manifest(
         "output_root": str(output_root),
         "files": files,
         "watchlist_count": len(watchlist_payload["watchlist"]),
-    }
+}
 
 
 def _summarize_watchlist_rows(rows: list[Any]) -> dict[str, Any]:
-    section_counts = Counter(row.section_name for row in rows)
-    quality_counts = Counter(row.trade_quality or row.portfolio or "unclassified" for row in rows)
-    return {
-        "entry_count": len(rows),
-        "section_counts": dict(section_counts),
-        "classification_counts": dict(quality_counts),
-    }
+    return IssueBriefService.summarize_watchlist_rows(rows)
+
+
+def _build_issue_brief_draft(
+    *,
+    title: str,
+    executive_summary: str,
+    entries: list[Any],
+    delta: IssueDelta | None,
+    reference: WatchlistReferenceRecord | None,
+) -> IssueBriefDraft:
+    return IssueBriefService.build_issue_brief(
+        title=title,
+        executive_summary=executive_summary,
+        entries=entries,
+        delta=delta,
+        reference=reference,
+    )
+
+
+def _issue_brief_fallback(
+    newsletter: Newsletter,
+    entries: list[WatchlistEntry],
+    delta: IssueDelta | None,
+    reference: WatchlistReferenceRecord | None,
+    brief: IssueBrief | None,
+) -> IssueBriefDraft:
+    if brief is not None:
+        return IssueBriefDraft(
+            headline=brief.headline or newsletter.title,
+            executive_summary=brief.executive_summary,
+            key_themes=brief.key_themes_json,
+            notable_risks=brief.notable_risks_json,
+            notable_opportunities=brief.notable_opportunities_json,
+            watchlist_summary=brief.watchlist_summary_json,
+            change_summary=brief.change_summary_json,
+        )
+    return _build_issue_brief_draft(
+        title=newsletter.title,
+        executive_summary=newsletter.overall_summary,
+        entries=entries,
+        delta=delta,
+        reference=reference,
+    )
 
 
 def _serialize_entry_delta(current: WatchlistEntry, previous: WatchlistEntry) -> dict[str, Any]:
@@ -498,42 +506,44 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
             list(previous_entries),
         )
 
+    issue_delta = session.execute(
+        select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+    ).scalar_one_or_none()
+    if issue_delta is None:
+        issue_delta = IssueDelta(
+            newsletter_id=newsletter.id,
+            previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
+            delta_status="generated",
+            added_entries_json=added_entries,
+            removed_entries_json=removed_entries,
+            changed_entries_json=changed_entries,
+            summary_text=delta_summary,
+        )
+        session.add(issue_delta)
+
     issue_brief = session.execute(
         select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
     ).scalar_one_or_none()
     if issue_brief is None:
+        brief_data = _build_issue_brief_draft(
+            title=newsletter.title,
+            executive_summary=newsletter.overall_summary,
+            entries=list(newsletter.watchlist_entries),
+            delta=issue_delta,
+            reference=newsletter.watchlist_reference,
+        )
         session.add(
             IssueBrief(
                 newsletter_id=newsletter.id,
                 parser_run_id=parser_run.id,
                 brief_status="draft",
-                headline=newsletter.title,
-                executive_summary=newsletter.overall_summary,
-                key_themes_json=[],
-                notable_risks_json=[],
-                notable_opportunities_json=[],
-                watchlist_summary_json=_summarize_watchlist_rows(newsletter.watchlist_entries),
-                change_summary_json={
-                    "added_count": len(added_entries),
-                    "removed_count": len(removed_entries),
-                    "changed_count": len(changed_entries),
-                },
-            )
-        )
-
-    issue_delta = session.execute(
-        select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
-    ).scalar_one_or_none()
-    if issue_delta is None:
-        session.add(
-            IssueDelta(
-                newsletter_id=newsletter.id,
-                previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
-                delta_status="generated",
-                added_entries_json=added_entries,
-                removed_entries_json=removed_entries,
-                changed_entries_json=changed_entries,
-                summary_text=delta_summary,
+                headline=brief_data.headline,
+                executive_summary=brief_data.executive_summary,
+                key_themes_json=brief_data.key_themes,
+                notable_risks_json=brief_data.notable_risks,
+                notable_opportunities_json=brief_data.notable_opportunities,
+                watchlist_summary_json=brief_data.watchlist_summary,
+                change_summary_json=brief_data.change_summary,
             )
         )
 
@@ -703,33 +713,37 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
                 previous_entries,
             )
 
+        issue_delta = IssueDelta(
+            newsletter_id=newsletter.id,
+            previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
+            delta_status="generated",
+            added_entries_json=added_entries,
+            removed_entries_json=removed_entries,
+            changed_entries_json=changed_entries,
+            summary_text=delta_summary,
+        )
+        session.add(
+            issue_delta
+        )
+        brief_data = _build_issue_brief_draft(
+            title=newsletter.title,
+            executive_summary=newsletter.overall_summary,
+            entries=current_entries,
+            delta=issue_delta,
+            reference=newsletter.watchlist_reference,
+        )
         session.add(
             IssueBrief(
                 newsletter_id=newsletter.id,
                 parser_run_id=parser_run.id,
                 brief_status="draft",
-                headline=newsletter.title,
-                executive_summary=newsletter.overall_summary,
-                key_themes_json=[],
-                notable_risks_json=[],
-                notable_opportunities_json=[],
-                watchlist_summary_json=_summarize_watchlist_rows(parsed.watchlist_rows),
-                change_summary_json={
-                    "added_count": len(added_entries),
-                    "removed_count": len(removed_entries),
-                    "changed_count": len(changed_entries),
-                },
-            )
-        )
-        session.add(
-            IssueDelta(
-                newsletter_id=newsletter.id,
-                previous_newsletter_id=previous_newsletter.id if previous_newsletter is not None else None,
-                delta_status="generated",
-                added_entries_json=added_entries,
-                removed_entries_json=removed_entries,
-                changed_entries_json=changed_entries,
-                summary_text=delta_summary,
+                headline=brief_data.headline,
+                executive_summary=brief_data.executive_summary,
+                key_themes_json=brief_data.key_themes,
+                notable_risks_json=brief_data.notable_risks,
+                notable_opportunities_json=brief_data.notable_opportunities,
+                watchlist_summary_json=brief_data.watchlist_summary,
+                change_summary_json=brief_data.change_summary,
             )
         )
         session.add(

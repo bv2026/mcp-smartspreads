@@ -11,6 +11,7 @@ This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder
 - [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
 - [`docs/phase1-database-schema.md`](./docs/phase1-database-schema.md) for the concrete Phase 1 schema design
 - [`docs/publication-contract.md`](./docs/publication-contract.md) for the published file contract and downstream handoff
+- [`docs/business-layer-design.md`](./docs/business-layer-design.md) for the first business/intelligence layer design above the parser and DB
 
 ## Recommendation
 

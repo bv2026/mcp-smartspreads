@@ -10,6 +10,24 @@ Build newsletter intelligence in two phases:
 The first phase focuses on weekly memory and publication.
 The second phase focuses on daily operational learning.
 
+## Chosen storage model
+
+The project will use:
+
+- relational DB for canonical newsletter intelligence history
+- published files for downstream integration
+- JSON as an artifact/export format where useful
+
+The project will not use:
+
+- file-only storage as the source of truth
+- JSON/NoSQL-first storage as the primary intelligence memory layer
+
+Reason:
+- newsletter intelligence is historical, comparable, and relational
+- downstream integration still benefits from simple published files
+- this hybrid model preserves memory without tightly coupling the systems
+
 ## Phase 1 scope
 
 ### Deliverables

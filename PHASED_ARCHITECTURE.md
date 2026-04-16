@@ -92,6 +92,21 @@ Recommended outputs:
 - `published/issue_brief.md`
 - `published/publication_manifest.json`
 
+### Storage decision
+
+Phase 1 is intentionally:
+- DB-first internally
+- file-published externally
+
+This means:
+- the relational newsletter DB is the source of truth
+- published files are the approved handoff contract
+- JSON is used as an export/publication format, not as the main historical store
+
+The architecture is explicitly not:
+- file-only as the system of record
+- JSON-first / NoSQL-first as the primary intelligence memory layer
+
 ### Why this is the right first step
 
 - preserves weekly memory
