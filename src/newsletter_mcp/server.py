@@ -5,6 +5,7 @@ import csv
 import hashlib
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from math import gcd
 import json
 from io import StringIO
 from pathlib import Path
@@ -376,8 +377,37 @@ def _build_watchlist_publication_entry(
     }
 
 
+def _expand_position_legs(position: dict[str, Any]) -> list[str]:
+    expanded = position.get("expanded_legs")
+    if expanded:
+        return [symbol.strip().upper() for symbol in expanded if symbol and symbol.strip()]
+
+    leg_quantities = position.get("leg_quantities")
+    if isinstance(leg_quantities, dict):
+        normalized_quantities = [
+            abs(int(quantity))
+            for quantity in leg_quantities.values()
+            if quantity not in (None, 0, "0")
+        ]
+        divisor = 0
+        for quantity in normalized_quantities:
+            divisor = quantity if divisor == 0 else gcd(divisor, quantity)
+        divisor = max(divisor, 1)
+
+        values: list[str] = []
+        for symbol, quantity in leg_quantities.items():
+            if not symbol or not str(symbol).strip():
+                continue
+            copies = max(abs(int(quantity)) // divisor, 1)
+            values.extend([str(symbol).strip().upper()] * copies)
+        if values:
+            return values
+
+    return [symbol.strip().upper() for symbol in position.get("legs", []) if symbol and symbol.strip()]
+
+
 def _position_leg_signature(legs: list[str]) -> tuple[str, ...]:
-    return tuple(symbol.strip().upper() for symbol in legs if symbol and symbol.strip())
+    return tuple(sorted(symbol.strip().upper() for symbol in legs if symbol and symbol.strip()))
 
 
 def _exit_urgency_bucket(exit_date: date | None, *, as_of: date) -> tuple[str, int | None]:
@@ -435,7 +465,7 @@ def _resolve_open_position_exit_schedules(
     results: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
     for position in positions:
-        signature = _position_leg_signature(position.get("legs", []))
+        signature = _position_leg_signature(_expand_position_legs(position))
         matches = entries_by_signature.get(signature, [])
         result: dict[str, Any] = {
             "position_id": position.get("id"),

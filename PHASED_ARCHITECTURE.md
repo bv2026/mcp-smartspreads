@@ -98,6 +98,11 @@ Newsletter MCP should augment this with:
 - newsletter-aligned conflict and exit interpretation
 - exit-date context for open positions and action prioritization
 
+Current Daily dry-run status:
+- newsletter history is now being used to resolve exit dates for current and legacy open spreads
+- symbol/root normalization is catalog-backed, including broker-root overrides like `VX -> /VXM`
+- butterfly matching is quantity-aware
+
 ## Two data domains
 
 It is useful to think of the system as having two separate data ownership zones:

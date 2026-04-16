@@ -138,6 +138,7 @@ The Daily workflow should assume:
 - Newsletter MCP provides weekly intelligence, rules, exits, and interpretation
 - each open position must be mapped to its newsletter-aligned exit date
 - exit-date urgency must be included in the daily action plan
+- historical newsletter matches should be used for still-open legacy carryovers when the exact spread is not in the current issue
 
 This is necessary because the Schwab API cannot be relied on to return futures positions for this workflow.
 
@@ -173,6 +174,11 @@ Current sections already provide a strong starting point:
 - next actions
 
 Exit dates for open positions are required fields in the Daily workflow, and they must feed directly into the generated action plan.
+
+Current implementation status:
+- newsletter-history-backed exit matching is now working for current-watchlist and legacy-carryover positions
+- broker-normalized symbol matching and quantity-aware butterfly matching are in place
+- manual fallback dates for truly unmatched positions are still optional future work, not a blocker for the current Daily flow
 
 ## Implementation plan
 

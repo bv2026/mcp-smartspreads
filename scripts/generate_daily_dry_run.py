@@ -239,16 +239,20 @@ def main() -> None:
                 "id": spread.root.lower().strip("/"),
                 "name": spread.label,
                 "legs": [leg["symbol"] for leg in spread.legs],
+                "leg_quantities": {
+                    leg["symbol"]: abs(int(leg.get("quantity", 1) or 1))
+                    for leg in spread.legs
+                },
             }
             for spread in spread_summaries
         ],
         as_of=futures["statement_date"],
     )
-    exit_schedule_by_legs = {
-        tuple(position["legs"]): position for position in exit_schedule["positions"]
+    exit_schedule_by_id = {
+        position["position_id"]: position for position in exit_schedule["positions"]
     }
     for spread in spread_summaries:
-        resolved = exit_schedule_by_legs.get(tuple(leg["symbol"] for leg in spread.legs))
+        resolved = exit_schedule_by_id.get(spread.root.lower().strip("/"))
         if resolved:
             spread.exit_date = resolved.get("exit_date")
             spread.urgency_bucket = resolved.get("urgency_bucket", "unknown")

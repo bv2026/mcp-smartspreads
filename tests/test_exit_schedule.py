@@ -145,6 +145,52 @@ class ExitScheduleResolverTests(unittest.TestCase):
         self.assertIsNone(unknown["exit_date"])
         self.assertEqual(unknown["urgency_bucket"], "unknown")
 
+    def test_resolve_open_position_exit_schedule_honors_expanded_butterfly_legs(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base_dir = Path(temp_dir.name)
+        database = Database(f"sqlite:///{(base_dir / 'exit-schedule-bfly.db').as_posix()}")
+        database.create_schema()
+        self.addCleanup(database.engine.dispose)
+
+        database_patch = mock.patch.object(server, "database", database)
+        database_patch.start()
+        self.addCleanup(database_patch.stop)
+
+        with database.session() as session:
+            current = _make_newsletter(week_ended=date(2026, 4, 3), source_file="current.pdf")
+            session.add(current)
+            session.flush()
+            session.add(
+                _make_watchlist_entry(
+                    newsletter_id=current.id,
+                    commodity_name="Corn",
+                    spread_code="CU26-2*CZ26+CH27",
+                    enter_date=date(2026, 4, 9),
+                    exit_date=date(2026, 8, 31),
+                    trade_quality="Tier 2",
+                )
+            )
+
+        result = server.resolve_open_position_exit_schedule(
+            positions=[
+                {
+                    "id": "zc_bfly",
+                    "name": "Corn butterfly",
+                    "legs": ["/ZCU26", "/ZCZ26", "/ZCH27"],
+                    "expanded_legs": ["/ZCU26", "/ZCZ26", "/ZCZ26", "/ZCH27"],
+                }
+            ],
+            as_of="2026-04-16",
+        )
+
+        self.assertEqual(result["urgency_counts"]["later"], 1)
+        match = result["positions"][0]
+        self.assertTrue(match["matched"])
+        self.assertEqual(match["commodity_name"], "Corn")
+        self.assertEqual(match["exit_date"], "2026-08-31")
+        self.assertEqual(match["alignment_status"], "current_watchlist")
+
 
 if __name__ == "__main__":
     unittest.main()

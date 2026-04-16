@@ -154,6 +154,9 @@ Use `newsletter-mcp` to retrieve:
 
 For each open position:
 - map it to the current newsletter watchlist when possible
+- search prior newsletter history when the exact spread is a legacy carryover
+- match using broker-normalized leg roots from the symbol catalogs
+- preserve spread structure for butterflies and other repeated-leg structures
 - determine whether it aligns with current intra/inter ideas
 - determine the newsletter-derived exit date
 - flag if the position is:
@@ -204,6 +207,8 @@ The current Claude-generated markdown should be treated as the seed contract and
 
 5. `Exit schedule`
    - open positions mapped to newsletter-derived exit dates
+   - prefer current-week exact matches first
+   - fall back to legacy newsletter matches when a spread is still open from an older issue
    - `overdue`
    - `due_today`
    - `due_this_week`
@@ -412,6 +417,16 @@ Design a reusable Daily prompt that:
 - gathers Schwab operational facts
 - gathers Newsletter intelligence
 - produces the markdown report and action plan
+
+## Current implementation status
+
+The current Daily dry-run implementation now supports:
+- newsletter-history-backed exit resolution for calendars and butterflies
+- broker-root-aware symbol matching using the commodity and Schwab symbol catalogs
+- legacy-carryover detection for positions that are no longer in the current issue but still exist in historical newsletters
+
+Current known gap:
+- if an open position truly has no newsletter-history match, the report still shows `Unknown` and a manual fallback field has not yet been introduced
 
 ### Step 4
 
