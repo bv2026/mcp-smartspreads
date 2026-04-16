@@ -312,6 +312,18 @@ def _build_watchlist_publication_entry(
     unique_symbols = list(dict.fromkeys(tos_symbols))
     unique_roots = list(dict.fromkeys(leg["root_code"] for leg in legs))
     canonical_key = _canonical_entry_key(newsletter, entry)
+    stream_supported_values = [leg["stream_supported"] for leg in legs if leg["stream_supported"] is not None]
+    native_spread_support_values = [
+        leg["native_spread_support"] for leg in legs if leg["native_spread_support"] is not None
+    ]
+    manual_legs_required_values = [
+        leg["manual_legs_required"] for leg in legs if leg["manual_legs_required"] is not None
+    ]
+    support_notes = [leg["support_notes"] for leg in legs if leg["support_notes"]]
+    deduped_support_notes: list[str] = []
+    for note in support_notes:
+        if note not in deduped_support_notes:
+            deduped_support_notes.append(note)
 
     if len(unique_roots) == 1 and ROOT_SYMBOL_MAP.get(unique_roots[0]) is not None:
         symbol = ROOT_SYMBOL_MAP[unique_roots[0]]
@@ -331,6 +343,12 @@ def _build_watchlist_publication_entry(
         "side": entry.side,
         "section": entry.section_name,
         "category": entry.category,
+        "stream_supported": None if not stream_supported_values else all(stream_supported_values),
+        "native_spread_support": None
+        if not native_spread_support_values
+        else all(native_spread_support_values),
+        "manual_legs_required": any(manual_legs_required_values),
+        "support_notes": deduped_support_notes,
         "enter_date": entry.enter_date.isoformat(),
         "exit_date": entry.exit_date.isoformat(),
         "valid_until": (newsletter.week_ended + timedelta(days=7)).isoformat(),

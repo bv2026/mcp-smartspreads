@@ -10,7 +10,14 @@ from unittest import mock
 from sqlalchemy import select
 
 from newsletter_mcp import server
-from newsletter_mcp.database import Database, Newsletter, PublicationArtifact, PublicationRun, WatchlistEntry
+from newsletter_mcp.database import (
+    Database,
+    Newsletter,
+    PublicationArtifact,
+    PublicationRun,
+    SchwabFuturesCatalog,
+    WatchlistEntry,
+)
 from newsletter_mcp.models import ParsedNewsletter, SectionSummary, WatchlistReference, WatchlistRow
 
 
@@ -204,6 +211,81 @@ class PublicationContractTests(unittest.TestCase):
             ).scalar_one()
             self.assertTrue(brief.key_themes_json)
             self.assertIn("blocked_count", brief.watchlist_summary_json)
+
+    def test_publish_issue_surfaces_support_metadata_for_manual_leg_symbols(self) -> None:
+        with self.database.session() as session:
+            session.add(
+                SchwabFuturesCatalog(
+                    symbol_root="/VX",
+                    display_name="CBOE Volatility Index (VIX)",
+                    category="Stock Indices",
+                    options_tradable=False,
+                    multiplier="$1,000",
+                    minimum_tick_size="0.05 = $50",
+                    settlement_type="Cash",
+                    trading_hours="6 p.m. ET Sunday to 5 p.m. Friday",
+                    is_micro=False,
+                    stream_supported=False,
+                    native_spread_support=False,
+                    manual_legs_required=True,
+                    support_notes="Manual legs required in TOS for this workflow.",
+                    is_active=True,
+                    metadata_json={},
+                )
+            )
+            session.add(
+                server.NewsletterCommodityCatalog(
+                    newsletter_root="VX",
+                    commodity_name="VIX",
+                    preferred_schwab_root="/VX",
+                    metadata_json={},
+                )
+            )
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == date(2026, 4, 10))
+            ).scalar_one()
+            session.add(
+                WatchlistEntry(
+                    newsletter_id=newsletter.id,
+                    commodity_name="S&P 500 VIX",
+                    spread_code="VXN26-VXU26",
+                    side="SELL",
+                    legs=2,
+                    category="Index",
+                    enter_date=date(2026, 4, 13),
+                    exit_date=date(2026, 6, 28),
+                    win_pct=100.0,
+                    avg_profit=1179,
+                    avg_best_profit=1500,
+                    avg_worst_loss=-300,
+                    avg_draw_down=-200,
+                    apw_pct=10.0,
+                    ridx=45.0,
+                    five_year_corr=7,
+                    trade_quality="Tier 1",
+                    volatility_structure="Mid",
+                    section_name="intra_commodity",
+                    page_number=8,
+                    raw_row="raw vix row",
+                    metadata_json={},
+                )
+            )
+
+        output_dir = self.base_dir / "published-support"
+        result = server.publish_issue(
+            week_ended="2026-04-10",
+            output_dir=str(output_dir),
+            publication_version="published-support",
+            published_by="unit-test",
+        )
+
+        self.assertEqual(result["watchlist_count"], 3)
+        watchlist_payload = json.loads((output_dir / "watchlist.yaml").read_text(encoding="utf-8"))
+        vix_row = next(row for row in watchlist_payload["watchlist"] if row["spread_code"] == "VXN26-VXU26")
+        self.assertEqual(vix_row["stream_supported"], False)
+        self.assertEqual(vix_row["native_spread_support"], False)
+        self.assertEqual(vix_row["manual_legs_required"], True)
+        self.assertEqual(vix_row["support_notes"], ["Manual legs required in TOS for this workflow."])
 
 
 if __name__ == "__main__":
