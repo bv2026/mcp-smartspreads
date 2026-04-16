@@ -339,6 +339,8 @@ class NewsletterCommodityCatalog(Base):
     commodity_name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
     exchange: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    globex_symbol_root: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    broker_symbol_root: Mapped[str | None] = mapped_column(String(32), nullable=True)
     preferred_schwab_root: Mapped[str | None] = mapped_column(String(32), nullable=True)
     alternate_schwab_roots_json: Mapped[list] = mapped_column(
         "alternate_schwab_roots",
@@ -495,6 +497,16 @@ class Database:
         self._add_column_if_missing("newsletter_commodity_catalog", "exchange", self._column_sql("text"))
         self._add_column_if_missing(
             "newsletter_commodity_catalog",
+            "globex_symbol_root",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "broker_symbol_root",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
             "preferred_schwab_root",
             self._column_sql("text"),
         )
@@ -573,6 +585,8 @@ class Database:
             "create unique index if not exists idx_schwab_futures_catalog_symbol_root on schwab_futures_catalog (symbol_root)",
             "create index if not exists idx_schwab_futures_catalog_category on schwab_futures_catalog (category)",
             "create unique index if not exists idx_newsletter_commodity_catalog_root on newsletter_commodity_catalog (newsletter_root)",
+            "create index if not exists idx_newsletter_commodity_catalog_globex_root on newsletter_commodity_catalog (globex_symbol_root)",
+            "create index if not exists idx_newsletter_commodity_catalog_broker_root on newsletter_commodity_catalog (broker_symbol_root)",
             "create index if not exists idx_newsletter_commodity_catalog_preferred_root on newsletter_commodity_catalog (preferred_schwab_root)",
             "create unique index if not exists idx_contract_month_codes_code on contract_month_codes (month_code)",
         ]

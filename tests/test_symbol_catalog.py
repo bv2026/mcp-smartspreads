@@ -202,6 +202,8 @@ class SymbolCatalogTests(unittest.TestCase):
             ).scalars().all()
 
         self.assertEqual([row.newsletter_root for row in rows], ["CL", "KW", "VX"])
+        self.assertEqual(rows[1].globex_symbol_root, "/KE")
+        self.assertEqual(rows[1].broker_symbol_root, "/KE")
         self.assertEqual(rows[1].preferred_schwab_root, "/KE")
         self.assertEqual(rows[1].source_issue_week, date(2026, 4, 10))
 

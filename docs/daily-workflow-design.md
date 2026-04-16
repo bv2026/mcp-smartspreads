@@ -204,8 +204,11 @@ The current Claude-generated markdown should be treated as the seed contract and
 
 5. `Exit schedule`
    - open positions mapped to newsletter-derived exit dates
-   - due today
-   - due soon
+   - `overdue`
+   - `due_today`
+   - `due_this_week`
+   - `next_2_weeks`
+   - `later`
    - overdue or unmatched where applicable
 
 6. `Watchlist alignment and conflicts`

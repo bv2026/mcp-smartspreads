@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 import csv
 import hashlib
+from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 import json
 from io import StringIO
@@ -42,7 +43,7 @@ COMMODITY_DETAILS_ROW_RE = re.compile(
     r"(?P<exchange>NYMEX|COMEX|CBOT|KCBT|CME|NYCE|LIF|ICE)\s+"
     r"(?P<unit>[\d,]+)\s+"
     r"(?P<newsletter_root>[A-Z]{1,3})\s+"
-    r"(?P<schwab_root>[A-Z]{1,4})"
+    r"(?P<globex_root>[A-Z]{1,4})"
 )
 ROOT_SYMBOL_MAP = {
     "BO": "/ZL",
@@ -190,8 +191,14 @@ def _resolve_newsletter_root_symbol(root: str) -> dict[str, Any]:
                 "mapping_source": "newsletter_policy",
             }
 
-        if newsletter_mapping is not None and newsletter_mapping.preferred_schwab_root:
-            schwab_root = newsletter_mapping.preferred_schwab_root
+        broker_root = None
+        if newsletter_mapping is not None:
+            broker_root = (
+                newsletter_mapping.broker_symbol_root
+                or newsletter_mapping.preferred_schwab_root
+            )
+        if broker_root:
+            schwab_root = broker_root
             mapping_source = "newsletter_catalog"
         else:
             direct_root = f"/{root}"
@@ -369,6 +376,117 @@ def _build_watchlist_publication_entry(
     }
 
 
+def _position_leg_signature(legs: list[str]) -> tuple[str, ...]:
+    return tuple(symbol.strip().upper() for symbol in legs if symbol and symbol.strip())
+
+
+def _exit_urgency_bucket(exit_date: date | None, *, as_of: date) -> tuple[str, int | None]:
+    if exit_date is None:
+        return "unknown", None
+    days_to_exit = (exit_date - as_of).days
+    if days_to_exit < 0:
+        return "overdue", days_to_exit
+    if days_to_exit == 0:
+        return "due_today", days_to_exit
+    if days_to_exit <= 7:
+        return "due_this_week", days_to_exit
+    if days_to_exit <= 14:
+        return "next_2_weeks", days_to_exit
+    return "later", days_to_exit
+
+
+def _resolve_open_position_exit_schedules(
+    positions: list[dict[str, Any]],
+    *,
+    as_of: date,
+) -> dict[str, Any]:
+    with database.session() as session:
+        current_issue = session.execute(
+            select(Newsletter).order_by(desc(Newsletter.week_ended))
+        ).scalars().first()
+
+        rows = session.execute(
+            select(WatchlistEntry, Newsletter.week_ended)
+            .join(Newsletter, WatchlistEntry.newsletter_id == Newsletter.id)
+            .order_by(desc(Newsletter.week_ended), WatchlistEntry.page_number, WatchlistEntry.id)
+        ).all()
+
+        entries_by_signature: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+        for entry, week_ended in rows:
+            signature = _position_leg_signature(
+                [leg["tos_symbol"] for leg in _parse_spread_legs(entry.spread_code)]
+            )
+            if not signature:
+                continue
+            entries_by_signature[signature].append(
+                {
+                    "newsletter_id": entry.newsletter_id,
+                    "week_ended": week_ended,
+                    "commodity_name": entry.commodity_name,
+                    "spread_code": entry.spread_code,
+                    "section_name": entry.section_name,
+                    "enter_date": entry.enter_date,
+                    "exit_date": entry.exit_date,
+                    "trade_quality": entry.trade_quality,
+                    "portfolio": entry.portfolio,
+                }
+            )
+
+    results: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for position in positions:
+        signature = _position_leg_signature(position.get("legs", []))
+        matches = entries_by_signature.get(signature, [])
+        result: dict[str, Any] = {
+            "position_id": position.get("id"),
+            "position_name": position.get("name"),
+            "legs": list(signature),
+            "matched": False,
+            "alignment_status": "unmatched",
+            "matched_week_ended": None,
+            "commodity_name": None,
+            "spread_code": None,
+            "section_name": None,
+            "classification": None,
+            "enter_date": None,
+            "exit_date": None,
+            "urgency_bucket": "unknown",
+            "days_to_exit": None,
+        }
+        if matches:
+            match = matches[0]
+            urgency_bucket, days_to_exit = _exit_urgency_bucket(match["exit_date"], as_of=as_of)
+            result.update(
+                {
+                    "matched": True,
+                    "alignment_status": (
+                        "current_watchlist"
+                        if current_issue is not None and match["week_ended"] == current_issue.week_ended
+                        else "legacy_carryover"
+                    ),
+                    "matched_week_ended": match["week_ended"].isoformat(),
+                    "commodity_name": match["commodity_name"],
+                    "spread_code": match["spread_code"],
+                    "section_name": match["section_name"],
+                    "classification": match["trade_quality"] or match["portfolio"],
+                    "enter_date": match["enter_date"].isoformat(),
+                    "exit_date": match["exit_date"].isoformat(),
+                    "urgency_bucket": urgency_bucket,
+                    "days_to_exit": days_to_exit,
+                }
+            )
+        counts[result["urgency_bucket"]] += 1
+        results.append(result)
+
+    return {
+        "as_of": as_of.isoformat(),
+        "current_issue_week_ended": current_issue.week_ended.isoformat() if current_issue is not None else None,
+        "position_count": len(positions),
+        "urgency_counts": dict(counts),
+        "positions": results,
+    }
+
+
 def _serialize_publication_yaml(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2)
 
@@ -378,6 +496,60 @@ def _normalize_catalog_text(value: str | None) -> str:
         return ""
     cleaned = value.replace("\ufeff", "").replace("Â®", "®").replace("Â", "").strip()
     return cleaned
+
+
+def _normalize_symbol_root(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    return normalized if normalized.startswith("/") else f"/{normalized.lstrip('/')}"
+
+
+def _derive_broker_symbol_root(
+    *,
+    commodity_name: str,
+    newsletter_root: str,
+    globex_symbol_root: str | None,
+    existing_mapping: NewsletterCommodityCatalog | None = None,
+) -> tuple[str | None, str]:
+    preserved = _normalize_symbol_root(
+        getattr(existing_mapping, "broker_symbol_root", None)
+        or getattr(existing_mapping, "preferred_schwab_root", None)
+    )
+    if preserved:
+        return preserved, "preserved_mapping"
+
+    normalized_globex = _normalize_symbol_root(globex_symbol_root)
+    with database.session() as session:
+        active_rows = session.execute(
+            select(SchwabFuturesCatalog).where(SchwabFuturesCatalog.is_active.is_(True))
+        ).scalars().all()
+
+    active_roots = {row.symbol_root: row for row in active_rows}
+    if normalized_globex and normalized_globex in active_roots:
+        return normalized_globex, "schwab_catalog_exact"
+
+    commodity_tokens = {
+        token.lower()
+        for token in re.split(r"[^A-Za-z0-9]+", commodity_name)
+        if token
+    }
+    candidate_matches: list[SchwabFuturesCatalog] = []
+    for row in active_rows:
+        display_tokens = {
+            token.lower()
+            for token in re.split(r"[^A-Za-z0-9]+", row.display_name)
+            if token
+        }
+        if commodity_tokens & display_tokens:
+            candidate_matches.append(row)
+
+    if len(candidate_matches) == 1:
+        return candidate_matches[0].symbol_root, "schwab_catalog_name_match"
+
+    return normalized_globex, "newsletter_globex_fallback"
 
 
 def _extract_commodity_details_text(raw_text: str) -> str:
@@ -415,14 +587,15 @@ def _parse_newsletter_commodity_rows(raw_text: str) -> list[dict[str, Any]]:
 
         commodity_name = " ".join(match.group("commodity").split())
         exchange = match.group("exchange").strip().upper()
-        preferred_root = f"/{match.group('schwab_root').strip().upper()}"
+        globex_root = f"/{match.group('globex_root').strip().upper()}"
         policy_block_reason = ROOT_BLOCK_REASONS.get(newsletter_root)
         rows.append(
             {
                 "newsletter_root": newsletter_root,
                 "commodity_name": commodity_name,
                 "exchange": exchange,
-                "preferred_schwab_root": preferred_root,
+                "globex_symbol_root": globex_root,
+                "preferred_schwab_root": globex_root,
                 "is_tradeable_by_policy": False if policy_block_reason else None,
                 "policy_block_reason": policy_block_reason,
             }
@@ -1388,6 +1561,8 @@ def _serialize_newsletter_commodity_mapping(record: NewsletterCommodityCatalog) 
         "commodity_name": record.commodity_name,
         "category": record.category,
         "exchange": record.exchange,
+        "globex_symbol_root": record.globex_symbol_root,
+        "broker_symbol_root": record.broker_symbol_root or record.preferred_schwab_root,
         "preferred_schwab_root": record.preferred_schwab_root,
         "alternate_schwab_roots": record.alternate_schwab_roots_json,
         "is_tradeable_by_policy": record.is_tradeable_by_policy,
@@ -1404,6 +1579,8 @@ def upsert_newsletter_commodity_mapping(
     newsletter_root: str,
     commodity_name: str,
     preferred_schwab_root: str | None = None,
+    globex_symbol_root: str | None = None,
+    broker_symbol_root: str | None = None,
     category: str | None = None,
     exchange: str | None = None,
     alternate_schwab_roots: list[str] | None = None,
@@ -1417,6 +1594,9 @@ def upsert_newsletter_commodity_mapping(
     preferred_root = preferred_schwab_root.strip().upper() if preferred_schwab_root else None
     if preferred_root and not preferred_root.startswith("/"):
         preferred_root = f"/{preferred_root.lstrip('/')}"
+    globex_root = _normalize_symbol_root(globex_symbol_root)
+    broker_root = _normalize_symbol_root(broker_symbol_root) or preferred_root
+    preferred_root = preferred_root or broker_root
 
     alternate_roots = [value.strip().upper() for value in (alternate_schwab_roots or []) if value.strip()]
     alternate_roots = [value if value.startswith("/") else f"/{value.lstrip('/')}" for value in alternate_roots]
@@ -1432,6 +1612,8 @@ def upsert_newsletter_commodity_mapping(
                 commodity_name=commodity_name,
                 category=category,
                 exchange=exchange,
+                globex_symbol_root=globex_root,
+                broker_symbol_root=broker_root,
                 preferred_schwab_root=preferred_root,
                 alternate_schwab_roots_json=alternate_roots,
                 is_tradeable_by_policy=is_tradeable_by_policy,
@@ -1447,6 +1629,8 @@ def upsert_newsletter_commodity_mapping(
             existing.commodity_name = commodity_name
             existing.category = category
             existing.exchange = exchange
+            existing.globex_symbol_root = globex_root
+            existing.broker_symbol_root = broker_root
             existing.preferred_schwab_root = preferred_root
             existing.alternate_schwab_roots_json = alternate_roots
             existing.is_tradeable_by_policy = is_tradeable_by_policy
@@ -1510,29 +1694,48 @@ def import_newsletter_commodity_catalog(week_ended: str | None = None) -> dict[s
             ).scalar_one_or_none()
 
             if existing is None:
+                broker_root, derivation_source = _derive_broker_symbol_root(
+                    commodity_name=row["commodity_name"],
+                    newsletter_root=row["newsletter_root"],
+                    globex_symbol_root=row.get("globex_symbol_root"),
+                )
                 session.add(
                     NewsletterCommodityCatalog(
                         newsletter_root=row["newsletter_root"],
                         commodity_name=row["commodity_name"],
                         exchange=row["exchange"],
-                        preferred_schwab_root=row["preferred_schwab_root"],
+                        globex_symbol_root=row.get("globex_symbol_root"),
+                        broker_symbol_root=broker_root,
+                        preferred_schwab_root=broker_root,
                         is_tradeable_by_policy=row["is_tradeable_by_policy"],
                         policy_block_reason=row["policy_block_reason"],
                         source_issue_week=newsletter.week_ended,
                         source_page_number=2,
-                        metadata_json={},
+                        metadata_json={"broker_root_source": derivation_source},
                     )
                 )
                 imported += 1
                 continue
 
+            broker_root, derivation_source = _derive_broker_symbol_root(
+                commodity_name=row["commodity_name"],
+                newsletter_root=row["newsletter_root"],
+                globex_symbol_root=row.get("globex_symbol_root"),
+                existing_mapping=existing,
+            )
             existing.commodity_name = row["commodity_name"]
             existing.exchange = row["exchange"]
-            existing.preferred_schwab_root = row["preferred_schwab_root"]
+            existing.globex_symbol_root = row.get("globex_symbol_root")
+            existing.broker_symbol_root = broker_root
+            existing.preferred_schwab_root = broker_root
             existing.is_tradeable_by_policy = row["is_tradeable_by_policy"]
             existing.policy_block_reason = row["policy_block_reason"]
             existing.source_issue_week = newsletter.week_ended
             existing.source_page_number = 2
+            existing.metadata_json = {
+                **(existing.metadata_json or {}),
+                "broker_root_source": derivation_source,
+            }
             updated += 1
 
         return {
@@ -1841,6 +2044,16 @@ def get_watchlist(
             response["watchlist_reference"] = _serialize_watchlist_reference(reference)
 
         return response
+
+
+@mcp.tool()
+def resolve_open_position_exit_schedule(
+    positions: list[dict[str, Any]],
+    as_of: str | None = None,
+) -> dict[str, Any]:
+    """Resolve newsletter-derived exit dates and urgency buckets for open spread positions."""
+    as_of_date = _parse_issue_date(as_of) if as_of else _utcnow().date()
+    return _resolve_open_position_exit_schedules(positions, as_of=as_of_date)
 
 
 @mcp.tool()

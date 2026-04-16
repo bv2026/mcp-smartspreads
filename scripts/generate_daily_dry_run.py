@@ -25,8 +25,10 @@ TOS_PNG_PATH = SCHWAB_ROOT / "config" / "tos-screenshot.png"
 STREAM_LOG_PATH = Path(r"C:\Users\vsbra\AppData\Roaming\Claude\logs\mcp-server-schwab-smartspreads-file.log")
 
 sys.path.insert(0, str(SCHWAB_ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src"))
 
 from schwab_mcp.tos_parser import parse_futures_ytd_pl, parse_tos_futures  # noqa: E402
+from newsletter_mcp import server as newsletter_server  # noqa: E402
 
 
 ROOT_NAMES = {
@@ -51,6 +53,9 @@ class SpreadSummary:
     current_value: float
     pl_dollars: float
     exit_date: str | None
+    urgency_bucket: str = "unknown"
+    days_to_exit: int | None = None
+    alignment_status: str = "unmatched"
 
 
 def _parse_sample_spread_rows(sample_text: str) -> dict[str, dict[str, str]]:
@@ -111,7 +116,6 @@ def _infer_spreads(legs: list[dict[str, Any]], sample_rows: dict[str, dict[str, 
         pl_dollars = round(sum(leg["pl_open"] for leg in root_legs), 2)
         sample_meta = sample_rows.get(root)
         label = sample_meta["label"] if sample_meta else f"{root} {ROOT_NAMES.get(root, root)}"
-        exit_date = sample_meta["exit"] if sample_meta else None
         summaries.append(
             SpreadSummary(
                 root=root,
@@ -121,7 +125,7 @@ def _infer_spreads(legs: list[dict[str, Any]], sample_rows: dict[str, dict[str, 
                 entry_value=entry_value,
                 current_value=current_value,
                 pl_dollars=pl_dollars,
-                exit_date=exit_date,
+                exit_date=None,
             )
         )
     return summaries
@@ -229,6 +233,27 @@ def main() -> None:
     mark_lookup = {leg["symbol"]: leg["mark"] for leg in legs}
     open_leg_symbols = set(mark_lookup)
     spread_summaries = _infer_spreads(legs, sample_rows)
+    exit_schedule = newsletter_server.resolve_open_position_exit_schedule(
+        positions=[
+            {
+                "id": spread.root.lower().strip("/"),
+                "name": spread.label,
+                "legs": [leg["symbol"] for leg in spread.legs],
+            }
+            for spread in spread_summaries
+        ],
+        as_of=futures["statement_date"],
+    )
+    exit_schedule_by_legs = {
+        tuple(position["legs"]): position for position in exit_schedule["positions"]
+    }
+    for spread in spread_summaries:
+        resolved = exit_schedule_by_legs.get(tuple(leg["symbol"] for leg in spread.legs))
+        if resolved:
+            spread.exit_date = resolved.get("exit_date")
+            spread.urgency_bucket = resolved.get("urgency_bucket", "unknown")
+            spread.days_to_exit = resolved.get("days_to_exit")
+            spread.alignment_status = resolved.get("alignment_status", "unmatched")
     configured_spread_count = len(positions_doc.get("positions", []))
 
     watchlist_lines, _ = _build_watchlist_rows(watchlist_doc["watchlist"], mark_lookup, open_leg_symbols)
@@ -330,15 +355,34 @@ def main() -> None:
     lines.append("")
     lines.append("## EXIT SCHEDULE")
     lines.append("")
-    lines.append("| Exit Date | Position | Action | Notes |")
-    lines.append("|-----------|----------|--------|-------|")
-    for spread in sorted(spread_summaries, key=lambda item: item.exit_date or "9999-12-31"):
+    lines.append("| Urgency | Exit Date | Days | Position | Action | Notes |")
+    lines.append("|---------|-----------|------|----------|--------|-------|")
+    urgency_order = {
+        "overdue": 0,
+        "due_today": 1,
+        "due_this_week": 2,
+        "next_2_weeks": 3,
+        "later": 4,
+        "unknown": 5,
+    }
+    for spread in sorted(
+        spread_summaries,
+        key=lambda item: (
+            urgency_order.get(item.urgency_bucket, 99),
+            item.days_to_exit if item.days_to_exit is not None else 9999,
+            item.exit_date or "9999-12-31",
+        ),
+    ):
         if spread.exit_date:
+            action = "EXIT / REVIEW" if spread.urgency_bucket in {"overdue", "due_today", "due_this_week"} else "MONITOR"
             lines.append(
-                f"| {spread.exit_date} | {spread.label} | EXIT / REVIEW | Current P/L {_format_money(spread.pl_dollars)} |"
+                f"| {spread.urgency_bucket} | {spread.exit_date} | {spread.days_to_exit if spread.days_to_exit is not None else 'N/A'} | "
+                f"{spread.label} | {action} | {spread.alignment_status}; current P/L {_format_money(spread.pl_dollars)} |"
             )
         else:
-            lines.append(f"| Unknown | {spread.label} | REVIEW | No mapped newsletter exit date in dry run |")
+            lines.append(
+                f"| unknown | Unknown | N/A | {spread.label} | REVIEW | No newsletter-derived exit match found |"
+            )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -375,7 +419,17 @@ def main() -> None:
     lines.append("")
     lines.append("## NEXT ACTIONS")
     lines.append("")
-    lines.append("1. Review all positions with the nearest mapped exit dates first.")
+    urgent_spreads = [
+        spread for spread in spread_summaries if spread.urgency_bucket in {"overdue", "due_today", "due_this_week"}
+    ]
+    if urgent_spreads:
+        lines.append(
+            "1. Review exit-driven positions first: "
+            + ", ".join(f"{spread.label} ({spread.urgency_bucket})" for spread in urgent_spreads[:3])
+            + "."
+        )
+    else:
+        lines.append("1. No immediate newsletter-derived exit deadlines are in the highest urgency buckets.")
     if conflicts:
         lines.append(f"2. Do not enter conflicting watchlist ideas: {', '.join(item['spread_code'] for item in conflicts)}.")
     else:

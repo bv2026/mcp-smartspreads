@@ -174,6 +174,8 @@ create table if not exists public.newsletter_commodity_catalog (
   commodity_name text not null,
   category text,
   exchange text,
+  globex_symbol_root text,
+  broker_symbol_root text,
   preferred_schwab_root text,
   alternate_schwab_roots jsonb not null default '[]'::jsonb,
   is_tradeable_by_policy boolean,
@@ -216,6 +218,8 @@ create index if not exists idx_publication_artifacts_publication_run_id on publi
 create unique index if not exists idx_schwab_futures_catalog_symbol_root on public.schwab_futures_catalog (symbol_root);
 create index if not exists idx_schwab_futures_catalog_category on public.schwab_futures_catalog (category);
 create unique index if not exists idx_newsletter_commodity_catalog_root on public.newsletter_commodity_catalog (newsletter_root);
+create index if not exists idx_newsletter_commodity_catalog_globex_root on public.newsletter_commodity_catalog (globex_symbol_root);
+create index if not exists idx_newsletter_commodity_catalog_broker_root on public.newsletter_commodity_catalog (broker_symbol_root);
 create index if not exists idx_newsletter_commodity_catalog_preferred_root on public.newsletter_commodity_catalog (preferred_schwab_root);
 create unique index if not exists idx_contract_month_codes_code on public.contract_month_codes (month_code);
 
