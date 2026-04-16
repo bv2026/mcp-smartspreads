@@ -15,6 +15,7 @@ Current milestone: Phase 1 is complete. The project now has persistent newslette
 - [`docs/phase1-database-schema.md`](./docs/phase1-database-schema.md) for the concrete Phase 1 schema design
 - [`docs/publication-contract.md`](./docs/publication-contract.md) for the published file contract and downstream handoff
 - [`docs/business-layer-design.md`](./docs/business-layer-design.md) for the first business/intelligence layer design above the parser and DB
+- [`docs/daily-workflow-design.md`](./docs/daily-workflow-design.md) for the Daily operational design built on Schwab MCP plus Newsletter intelligence
 
 ## Recommendation
 
