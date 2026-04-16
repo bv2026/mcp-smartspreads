@@ -147,6 +147,41 @@ create table if not exists public.publication_artifacts (
   metadata jsonb not null default '{}'::jsonb
 );
 
+create table if not exists public.schwab_futures_catalog (
+  id bigserial primary key,
+  symbol_root text not null unique,
+  display_name text not null,
+  category text not null,
+  options_tradable boolean,
+  multiplier text,
+  minimum_tick_size text,
+  settlement_type text,
+  trading_hours text,
+  is_micro boolean not null default false,
+  stream_supported boolean,
+  source_file text,
+  source_modified_at timestamptz,
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.newsletter_commodity_catalog (
+  id bigserial primary key,
+  newsletter_root text not null unique,
+  commodity_name text not null,
+  category text,
+  exchange text,
+  preferred_schwab_root text,
+  alternate_schwab_roots jsonb not null default '[]'::jsonb,
+  is_tradeable_by_policy boolean,
+  policy_block_reason text,
+  mapping_confidence double precision,
+  mapping_notes text,
+  source_issue_week date,
+  source_page_number integer,
+  metadata jsonb not null default '{}'::jsonb
+);
+
 create index if not exists idx_newsletters_week_ended on public.newsletters (week_ended desc);
 create index if not exists idx_newsletters_issue_status on public.newsletters (issue_status);
 create index if not exists idx_parser_runs_newsletter_id on public.parser_runs (newsletter_id);
@@ -165,6 +200,10 @@ create index if not exists idx_watchlist_references_parser_run_id on public.watc
 create index if not exists idx_issue_deltas_previous_newsletter_id on public.issue_deltas (previous_newsletter_id);
 create index if not exists idx_publication_runs_newsletter_id on public.publication_runs (newsletter_id);
 create index if not exists idx_publication_artifacts_publication_run_id on public.publication_artifacts (publication_run_id);
+create unique index if not exists idx_schwab_futures_catalog_symbol_root on public.schwab_futures_catalog (symbol_root);
+create index if not exists idx_schwab_futures_catalog_category on public.schwab_futures_catalog (category);
+create unique index if not exists idx_newsletter_commodity_catalog_root on public.newsletter_commodity_catalog (newsletter_root);
+create index if not exists idx_newsletter_commodity_catalog_preferred_root on public.newsletter_commodity_catalog (preferred_schwab_root);
 
 alter table public.newsletters enable row level security;
 alter table public.parser_runs enable row level security;
@@ -175,6 +214,8 @@ alter table public.issue_briefs enable row level security;
 alter table public.issue_deltas enable row level security;
 alter table public.publication_runs enable row level security;
 alter table public.publication_artifacts enable row level security;
+alter table public.schwab_futures_catalog enable row level security;
+alter table public.newsletter_commodity_catalog enable row level security;
 
 create policy "service role full access newsletters"
 on public.newsletters
@@ -234,6 +275,20 @@ with check (true);
 
 create policy "service role full access publication_artifacts"
 on public.publication_artifacts
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access schwab_futures_catalog"
+on public.schwab_futures_catalog
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access newsletter_commodity_catalog"
+on public.newsletter_commodity_catalog
 for all
 to service_role
 using (true)

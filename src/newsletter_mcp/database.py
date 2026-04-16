@@ -308,6 +308,50 @@ class PublicationArtifact(Base):
     publication_run: Mapped["PublicationRun"] = relationship(back_populates="artifacts")
 
 
+class SchwabFuturesCatalog(Base):
+    __tablename__ = "schwab_futures_catalog"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol_root: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    options_tradable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    multiplier: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    minimum_tick_size: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    settlement_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    trading_hours: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_micro: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    stream_supported: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    source_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+
+class NewsletterCommodityCatalog(Base):
+    __tablename__ = "newsletter_commodity_catalog"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_root: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    commodity_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    preferred_schwab_root: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    alternate_schwab_roots_json: Mapped[list] = mapped_column(
+        "alternate_schwab_roots",
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    is_tradeable_by_policy: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    policy_block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mapping_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mapping_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_issue_week: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+
 class Database:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -325,6 +369,8 @@ class Database:
         self._ensure_newsletter_sections_phase1_columns()
         self._ensure_watchlist_entries_phase1_columns()
         self._ensure_watchlist_references_phase1_columns()
+        self._ensure_schwab_futures_catalog_columns()
+        self._ensure_newsletter_commodity_catalog_columns()
 
     def _ensure_newsletters_phase1_columns(self) -> None:
         self._add_column_if_missing("newsletters", "issue_code", self._column_sql("text"))
@@ -391,6 +437,85 @@ class Database:
             self._column_sql("json", nullable=False, default="'{}'"),
         )
 
+    def _ensure_schwab_futures_catalog_columns(self) -> None:
+        self._add_column_if_missing("schwab_futures_catalog", "symbol_root", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "display_name", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "category", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "options_tradable", self._column_sql("boolean"))
+        self._add_column_if_missing("schwab_futures_catalog", "multiplier", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "minimum_tick_size", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "settlement_type", self._column_sql("text"))
+        self._add_column_if_missing("schwab_futures_catalog", "trading_hours", self._column_sql("text"))
+        self._add_column_if_missing(
+            "schwab_futures_catalog",
+            "is_micro",
+            self._column_sql("boolean", nullable=False, default="0"),
+        )
+        self._add_column_if_missing("schwab_futures_catalog", "stream_supported", self._column_sql("boolean"))
+        self._add_column_if_missing("schwab_futures_catalog", "source_file", self._column_sql("text"))
+        self._add_column_if_missing(
+            "schwab_futures_catalog",
+            "source_modified_at",
+            self._column_sql("datetime"),
+        )
+        self._add_column_if_missing(
+            "schwab_futures_catalog",
+            "is_active",
+            self._column_sql("boolean", nullable=False, default="1"),
+        )
+        self._add_column_if_missing(
+            "schwab_futures_catalog",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
+    def _ensure_newsletter_commodity_catalog_columns(self) -> None:
+        self._add_column_if_missing("newsletter_commodity_catalog", "newsletter_root", self._column_sql("text"))
+        self._add_column_if_missing("newsletter_commodity_catalog", "commodity_name", self._column_sql("text"))
+        self._add_column_if_missing("newsletter_commodity_catalog", "category", self._column_sql("text"))
+        self._add_column_if_missing("newsletter_commodity_catalog", "exchange", self._column_sql("text"))
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "preferred_schwab_root",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "alternate_schwab_roots",
+            self._column_sql("json", nullable=False, default="'[]'"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "is_tradeable_by_policy",
+            self._column_sql("boolean"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "policy_block_reason",
+            self._column_sql("text"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "mapping_confidence",
+            self._column_sql("float"),
+        )
+        self._add_column_if_missing("newsletter_commodity_catalog", "mapping_notes", self._column_sql("text"))
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "source_issue_week",
+            self._column_sql("date"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "source_page_number",
+            self._column_sql("integer"),
+        )
+        self._add_column_if_missing(
+            "newsletter_commodity_catalog",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+
     def _create_phase1_indexes(self) -> None:
         index_statements = [
             "create index if not exists idx_newsletters_issue_status on newsletters (issue_status)",
@@ -406,6 +531,10 @@ class Database:
             "create index if not exists idx_issue_deltas_previous_newsletter_id on issue_deltas (previous_newsletter_id)",
             "create index if not exists idx_publication_runs_newsletter_id on publication_runs (newsletter_id)",
             "create index if not exists idx_publication_artifacts_publication_run_id on publication_artifacts (publication_run_id)",
+            "create unique index if not exists idx_schwab_futures_catalog_symbol_root on schwab_futures_catalog (symbol_root)",
+            "create index if not exists idx_schwab_futures_catalog_category on schwab_futures_catalog (category)",
+            "create unique index if not exists idx_newsletter_commodity_catalog_root on newsletter_commodity_catalog (newsletter_root)",
+            "create index if not exists idx_newsletter_commodity_catalog_preferred_root on newsletter_commodity_catalog (preferred_schwab_root)",
         ]
         with self.engine.begin() as connection:
             for statement in index_statements:
@@ -429,6 +558,7 @@ class Database:
             "datetime": "timestamptz" if self.engine.dialect.name == "postgresql" else "datetime",
             "boolean": "boolean" if self.engine.dialect.name == "postgresql" else "integer",
             "json": "jsonb" if self.engine.dialect.name == "postgresql" else "text",
+            "date": "date",
         }
         sql = type_map[logical_type]
         if default is not None:

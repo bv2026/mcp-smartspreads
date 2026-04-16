@@ -21,9 +21,11 @@ from .database import (
     IssueDelta,
     Newsletter,
     NewsletterSection,
+    NewsletterCommodityCatalog,
     ParserRun,
     PublicationArtifact,
     PublicationRun,
+    SchwabFuturesCatalog,
     WatchlistEntry,
     WatchlistReferenceRecord,
 )
@@ -68,6 +70,7 @@ settings = Settings.from_env()
 database = Database(settings.database_url)
 database.create_schema()
 mcp = FastMCP("newsletter-mcp")
+DEFAULT_SCHWAB_CATALOG_CSV = Path(r"C:\Users\vsbra\OneDrive\Downloads1\futures-tradelog - Sheet13.csv")
 
 
 def _utcnow() -> datetime:
@@ -257,6 +260,95 @@ def _build_watchlist_publication_entry(
 
 def _serialize_publication_yaml(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2)
+
+
+def _normalize_catalog_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    cleaned = value.replace("\ufeff", "").replace("Â®", "®").replace("Â", "").strip()
+    return cleaned
+
+
+def _parse_yes_no(value: str | None) -> bool | None:
+    normalized = _normalize_catalog_text(value).lower()
+    if normalized == "yes":
+        return True
+    if normalized == "no":
+        return False
+    return None
+
+
+def _is_catalog_section_row(row: list[str]) -> bool:
+    if not row:
+        return False
+    first = _normalize_catalog_text(row[0])
+    if not first or first == "View Less":
+        return False
+    remaining = [_normalize_catalog_text(cell) for cell in row[1:]]
+    return all(not cell for cell in remaining)
+
+
+def _extract_schwab_catalog_rows(csv_path: Path) -> list[dict[str, Any]]:
+    parsed_rows: list[dict[str, Any]] = []
+    seen_roots: set[str] = set()
+    current_category = "Uncategorized"
+
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.reader(handle)
+        for raw_row in reader:
+            row = [_normalize_catalog_text(cell) for cell in raw_row]
+            if not any(row):
+                continue
+            if _is_catalog_section_row(row):
+                current_category = row[0]
+                continue
+            if row[0] == "View Less":
+                continue
+            if row[0] == "" and len(row) > 1 and row[1] == "Symbol":
+                continue
+
+            display_name = row[0] if len(row) > 0 else ""
+            symbol_root = row[1] if len(row) > 1 else ""
+            if not display_name or not symbol_root.startswith("/"):
+                continue
+            if symbol_root in seen_roots:
+                continue
+            seen_roots.add(symbol_root)
+
+            parsed_rows.append(
+                {
+                    "symbol_root": symbol_root,
+                    "display_name": display_name,
+                    "category": current_category,
+                    "options_tradable": _parse_yes_no(row[2] if len(row) > 2 else None),
+                    "multiplier": row[3] if len(row) > 3 else None,
+                    "minimum_tick_size": row[4] if len(row) > 4 else None,
+                    "settlement_type": row[5] if len(row) > 5 else None,
+                    "trading_hours": row[6] if len(row) > 6 else None,
+                    "is_micro": "micro" in display_name.lower(),
+                    "stream_supported": None,
+                }
+            )
+
+    return parsed_rows
+
+
+def _serialize_schwab_catalog_row(record: SchwabFuturesCatalog) -> dict[str, Any]:
+    return {
+        "symbol_root": record.symbol_root,
+        "display_name": record.display_name,
+        "category": record.category,
+        "options_tradable": record.options_tradable,
+        "multiplier": record.multiplier,
+        "minimum_tick_size": record.minimum_tick_size,
+        "settlement_type": record.settlement_type,
+        "trading_hours": record.trading_hours,
+        "is_micro": record.is_micro,
+        "stream_supported": record.stream_supported,
+        "is_active": record.is_active,
+        "source_file": record.source_file,
+        "source_modified_at": record.source_modified_at.isoformat() if record.source_modified_at else None,
+    }
 
 
 def _build_issue_brief_markdown(
@@ -920,6 +1012,105 @@ def list_issues(limit: int = 10) -> list[dict[str, Any]]:
             }
             for record in records
         ]
+
+
+@mcp.tool()
+def import_schwab_futures_catalog(csv_path: str | None = None) -> dict[str, Any]:
+    """Import the Schwab futures symbol catalog from a CSV export into the database."""
+    source_path = Path(csv_path) if csv_path else DEFAULT_SCHWAB_CATALOG_CSV
+    if not source_path.exists():
+        raise ValueError(f"Schwab futures catalog CSV not found at {source_path}")
+
+    parsed_rows = _extract_schwab_catalog_rows(source_path)
+    if not parsed_rows:
+        raise ValueError(f"No Schwab futures catalog rows were parsed from {source_path}")
+
+    source_modified_at = datetime.fromtimestamp(source_path.stat().st_mtime, tz=UTC)
+    imported = 0
+    updated = 0
+    seen_roots = {row["symbol_root"] for row in parsed_rows}
+
+    with database.session() as session:
+        existing_rows = {
+            record.symbol_root: record
+            for record in session.execute(select(SchwabFuturesCatalog)).scalars().all()
+        }
+
+        for row in parsed_rows:
+            existing = existing_rows.get(row["symbol_root"])
+            if existing is None:
+                session.add(
+                    SchwabFuturesCatalog(
+                        symbol_root=row["symbol_root"],
+                        display_name=row["display_name"],
+                        category=row["category"],
+                        options_tradable=row["options_tradable"],
+                        multiplier=row["multiplier"],
+                        minimum_tick_size=row["minimum_tick_size"],
+                        settlement_type=row["settlement_type"],
+                        trading_hours=row["trading_hours"],
+                        is_micro=row["is_micro"],
+                        stream_supported=row["stream_supported"],
+                        source_file=str(source_path),
+                        source_modified_at=source_modified_at,
+                        is_active=True,
+                        metadata_json={},
+                    )
+                )
+                imported += 1
+                continue
+
+            existing.display_name = row["display_name"]
+            existing.category = row["category"]
+            existing.options_tradable = row["options_tradable"]
+            existing.multiplier = row["multiplier"]
+            existing.minimum_tick_size = row["minimum_tick_size"]
+            existing.settlement_type = row["settlement_type"]
+            existing.trading_hours = row["trading_hours"]
+            existing.is_micro = row["is_micro"]
+            existing.source_file = str(source_path)
+            existing.source_modified_at = source_modified_at
+            existing.is_active = True
+            updated += 1
+
+        for symbol_root, record in existing_rows.items():
+            if record.source_file == str(source_path) and symbol_root not in seen_roots:
+                record.is_active = False
+
+        category_counts = Counter(row["category"] for row in parsed_rows)
+
+    return {
+        "csv_path": str(source_path),
+        "source_modified_at": source_modified_at.isoformat(),
+        "row_count": len(parsed_rows),
+        "imported_count": imported,
+        "updated_count": updated,
+        "category_counts": dict(category_counts),
+        "sample_symbols": sorted(seen_roots)[:10],
+    }
+
+
+@mcp.tool()
+def list_schwab_futures_catalog(limit: int = 25, category: str | None = None) -> dict[str, Any]:
+    """List rows from the imported Schwab futures symbol catalog."""
+    with database.session() as session:
+        stmt = select(SchwabFuturesCatalog).where(SchwabFuturesCatalog.is_active.is_(True))
+        if category:
+            stmt = stmt.where(SchwabFuturesCatalog.category == category)
+        stmt = stmt.order_by(SchwabFuturesCatalog.category, SchwabFuturesCatalog.symbol_root).limit(limit)
+        rows = session.execute(stmt).scalars().all()
+
+        categories = Counter(
+            session.execute(
+                select(SchwabFuturesCatalog.category).where(SchwabFuturesCatalog.is_active.is_(True))
+            ).scalars().all()
+        )
+
+        return {
+            "count": len(rows),
+            "categories": dict(categories),
+            "rows": [_serialize_schwab_catalog_row(row) for row in rows],
+        }
 
 
 @mcp.tool()
