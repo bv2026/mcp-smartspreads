@@ -76,6 +76,40 @@ class SymbolCatalogTests(unittest.TestCase):
             ["/VX", "/VXM"],
         )
 
+    def test_upsert_newsletter_commodity_mapping_persists_and_lists(self) -> None:
+        result = server.upsert_newsletter_commodity_mapping(
+            newsletter_root="KW",
+            commodity_name="KC Wheat",
+            preferred_schwab_root="/KE",
+            category="Grain",
+            mapping_confidence=0.95,
+            mapping_notes="Matches Schwab KC wheat root.",
+        )
+
+        self.assertEqual(result["action"], "created")
+        self.assertEqual(result["mapping"]["preferred_schwab_root"], "/KE")
+
+        listing = server.list_newsletter_commodity_catalog()
+        self.assertEqual(listing["count"], 1)
+        self.assertEqual(listing["rows"][0]["newsletter_root"], "KW")
+        self.assertEqual(listing["rows"][0]["preferred_schwab_root"], "/KE")
+
+    def test_contract_resolution_prefers_newsletter_mapping_when_catalog_exists(self) -> None:
+        server.import_schwab_futures_catalog(str(self.csv_path))
+        server.upsert_newsletter_commodity_mapping(
+            newsletter_root="VX",
+            commodity_name="VIX",
+            preferred_schwab_root="/VXM",
+            category="Index",
+            mapping_notes="Prefer mini VIX for Schwab execution.",
+        )
+
+        tos_symbol, blocked_reason, root = server._tos_symbol_for_contract("VXN26")
+
+        self.assertEqual(root, "VX")
+        self.assertIsNone(blocked_reason)
+        self.assertEqual(tos_symbol, "/VXMN26")
+
 
 if __name__ == "__main__":
     unittest.main()

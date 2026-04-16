@@ -139,15 +139,78 @@ def _parse_contract_code(contract_code: str) -> dict[str, str]:
     return match.groupdict()
 
 
+def _resolve_newsletter_root_symbol(root: str) -> dict[str, Any]:
+    if root in ROOT_BLOCK_REASONS:
+        return {
+            "root_code": root,
+            "schwab_root": None,
+            "blocked_reason": ROOT_BLOCK_REASONS[root],
+            "mapping_source": "policy_block",
+        }
+
+    with database.session() as session:
+        active_schwab_roots = set(
+            session.execute(
+                select(SchwabFuturesCatalog.symbol_root).where(SchwabFuturesCatalog.is_active.is_(True))
+            ).scalars().all()
+        )
+        has_catalog = bool(active_schwab_roots)
+        newsletter_mapping = session.execute(
+            select(NewsletterCommodityCatalog).where(NewsletterCommodityCatalog.newsletter_root == root)
+        ).scalar_one_or_none()
+
+        if newsletter_mapping is not None and newsletter_mapping.is_tradeable_by_policy is False:
+            return {
+                "root_code": root,
+                "schwab_root": newsletter_mapping.preferred_schwab_root,
+                "blocked_reason": newsletter_mapping.policy_block_reason
+                or f"Newsletter policy marks {root} as not tradeable.",
+                "mapping_source": "newsletter_policy",
+            }
+
+        if newsletter_mapping is not None and newsletter_mapping.preferred_schwab_root:
+            schwab_root = newsletter_mapping.preferred_schwab_root
+            mapping_source = "newsletter_catalog"
+        else:
+            direct_root = f"/{root}"
+            if direct_root in active_schwab_roots:
+                schwab_root = direct_root
+                mapping_source = "schwab_catalog_direct"
+            else:
+                schwab_root = ROOT_SYMBOL_MAP.get(root)
+                mapping_source = "fallback_map"
+
+        if schwab_root is None:
+            return {
+                "root_code": root,
+                "schwab_root": None,
+                "blocked_reason": f"No Schwab symbol mapping configured for contract root {root}.",
+                "mapping_source": mapping_source,
+            }
+
+        if has_catalog and schwab_root not in active_schwab_roots:
+            return {
+                "root_code": root,
+                "schwab_root": schwab_root,
+                "blocked_reason": f"{schwab_root} is not present in the imported Schwab futures catalog.",
+                "mapping_source": mapping_source,
+            }
+
+        return {
+            "root_code": root,
+            "schwab_root": schwab_root,
+            "blocked_reason": None,
+            "mapping_source": mapping_source,
+        }
+
+
 def _tos_symbol_for_contract(contract_code: str) -> tuple[str | None, str | None, str]:
     parsed = _parse_contract_code(contract_code)
     root = parsed["root"]
-    if root in ROOT_BLOCK_REASONS:
-        return None, ROOT_BLOCK_REASONS[root], root
-    base_symbol = ROOT_SYMBOL_MAP.get(root)
-    if base_symbol is None:
-        return None, f"No TOS root mapping configured for contract root {root}.", root
-    return f"{base_symbol}{parsed['month']}{parsed['year']}", None, root
+    resolution = _resolve_newsletter_root_symbol(root)
+    if resolution["schwab_root"] is None:
+        return None, resolution["blocked_reason"], root
+    return f"{resolution['schwab_root']}{parsed['month']}{parsed['year']}", resolution["blocked_reason"], root
 
 
 def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
@@ -156,6 +219,7 @@ def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
         multiplier = int(multiplier_text or "1")
         operator = sign or "+"
         tos_symbol, blocked_reason, root = _tos_symbol_for_contract(contract_code)
+        resolution = _resolve_newsletter_root_symbol(root)
         for copy_index in range(multiplier):
             legs.append(
                 {
@@ -164,6 +228,8 @@ def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
                     "copy_index": copy_index,
                     "contract_code": contract_code,
                     "root_code": root,
+                    "resolved_root": resolution["schwab_root"],
+                    "mapping_source": resolution["mapping_source"],
                     "tos_symbol": tos_symbol,
                     "tradeable": blocked_reason is None,
                     "blocked_reason": blocked_reason,
@@ -1110,6 +1176,101 @@ def list_schwab_futures_catalog(limit: int = 25, category: str | None = None) ->
             "count": len(rows),
             "categories": dict(categories),
             "rows": [_serialize_schwab_catalog_row(row) for row in rows],
+        }
+
+
+def _serialize_newsletter_commodity_mapping(record: NewsletterCommodityCatalog) -> dict[str, Any]:
+    return {
+        "newsletter_root": record.newsletter_root,
+        "commodity_name": record.commodity_name,
+        "category": record.category,
+        "exchange": record.exchange,
+        "preferred_schwab_root": record.preferred_schwab_root,
+        "alternate_schwab_roots": record.alternate_schwab_roots_json,
+        "is_tradeable_by_policy": record.is_tradeable_by_policy,
+        "policy_block_reason": record.policy_block_reason,
+        "mapping_confidence": record.mapping_confidence,
+        "mapping_notes": record.mapping_notes,
+        "source_issue_week": record.source_issue_week.isoformat() if record.source_issue_week else None,
+        "source_page_number": record.source_page_number,
+    }
+
+
+@mcp.tool()
+def upsert_newsletter_commodity_mapping(
+    newsletter_root: str,
+    commodity_name: str,
+    preferred_schwab_root: str | None = None,
+    category: str | None = None,
+    exchange: str | None = None,
+    alternate_schwab_roots: list[str] | None = None,
+    is_tradeable_by_policy: bool | None = None,
+    policy_block_reason: str | None = None,
+    mapping_confidence: float | None = None,
+    mapping_notes: str | None = None,
+) -> dict[str, Any]:
+    """Create or update a newsletter commodity to Schwab root mapping."""
+    root = newsletter_root.strip().upper()
+    preferred_root = preferred_schwab_root.strip().upper() if preferred_schwab_root else None
+    if preferred_root and not preferred_root.startswith("/"):
+        preferred_root = f"/{preferred_root.lstrip('/')}"
+
+    alternate_roots = [value.strip().upper() for value in (alternate_schwab_roots or []) if value.strip()]
+    alternate_roots = [value if value.startswith("/") else f"/{value.lstrip('/')}" for value in alternate_roots]
+
+    with database.session() as session:
+        existing = session.execute(
+            select(NewsletterCommodityCatalog).where(NewsletterCommodityCatalog.newsletter_root == root)
+        ).scalar_one_or_none()
+
+        if existing is None:
+            record = NewsletterCommodityCatalog(
+                newsletter_root=root,
+                commodity_name=commodity_name,
+                category=category,
+                exchange=exchange,
+                preferred_schwab_root=preferred_root,
+                alternate_schwab_roots_json=alternate_roots,
+                is_tradeable_by_policy=is_tradeable_by_policy,
+                policy_block_reason=policy_block_reason,
+                mapping_confidence=mapping_confidence,
+                mapping_notes=mapping_notes,
+                metadata_json={},
+            )
+            session.add(record)
+            session.flush()
+            action = "created"
+        else:
+            existing.commodity_name = commodity_name
+            existing.category = category
+            existing.exchange = exchange
+            existing.preferred_schwab_root = preferred_root
+            existing.alternate_schwab_roots_json = alternate_roots
+            existing.is_tradeable_by_policy = is_tradeable_by_policy
+            existing.policy_block_reason = policy_block_reason
+            existing.mapping_confidence = mapping_confidence
+            existing.mapping_notes = mapping_notes
+            record = existing
+            action = "updated"
+
+        return {
+            "action": action,
+            "mapping": _serialize_newsletter_commodity_mapping(record),
+        }
+
+
+@mcp.tool()
+def list_newsletter_commodity_catalog(limit: int = 50) -> dict[str, Any]:
+    """List newsletter commodity mappings currently stored in the database."""
+    with database.session() as session:
+        rows = session.execute(
+            select(NewsletterCommodityCatalog)
+            .order_by(NewsletterCommodityCatalog.newsletter_root)
+            .limit(limit)
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "rows": [_serialize_newsletter_commodity_mapping(row) for row in rows],
         }
 
 
