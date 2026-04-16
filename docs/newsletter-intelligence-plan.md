@@ -28,6 +28,29 @@ Reason:
 - downstream integration still benefits from simple published files
 - this hybrid model preserves memory without tightly coupling the systems
 
+## Two data domains
+
+The architecture should be understood as two separate data domains:
+
+### Newsletter domain
+
+- owned by `Newsletter MCP`
+- DB-first in Phase 1
+- holds weekly intelligence history and publication state
+
+### TOS / operational domain
+
+- owned by `Schwab MCP`
+- file-based in Phase 1
+- uses TOS account statement files, screenshots, published newsletter contract files, and live market queries
+
+This means the practical Phase 1 model is:
+
+- `Newsletter MCP -> Newsletter DB`
+- `Schwab MCP -> file-based operational state`
+
+Only in Phase 2 does the Schwab side need to become a more formal operational DB, if daily persistence and learning require it.
+
 ## Phase 1 scope
 
 ### Deliverables

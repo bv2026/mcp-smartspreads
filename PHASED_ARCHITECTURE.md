@@ -61,6 +61,43 @@ Owns:
 - daily operational reporting
 - operational database
 
+## Two data domains
+
+It is useful to think of the system as having two separate data ownership zones:
+
+### 1. Newsletter intelligence domain
+
+Owned by `Newsletter MCP`.
+
+In Phase 1, this is already a real relational database and is the system of record for:
+- newsletter issues
+- watchlist entries
+- watchlist references
+- issue briefs
+- issue deltas
+- parser runs
+- publication runs and artifacts
+
+### 2. TOS / operational domain
+
+Owned by `Schwab MCP`.
+
+In Phase 1, this is not yet a formal DB-first system. It is primarily file-based and live-data-driven:
+- TOS account statement CSV dropped into the Schwab MCP `config/` folder
+- TOS screenshots used for validation/context
+- published weekly contract files from Newsletter MCP
+- live or latest-available market data queried through Schwab MCP
+
+So in Phase 1 the practical model is:
+- `Newsletter MCP -> Newsletter DB`
+- `Schwab MCP -> file-based operational state`
+
+In Phase 2, the Schwab side can evolve into a true operational DB if needed for:
+- daily snapshots
+- daily reports
+- action-plan history
+- weekly-to-daily learning
+
 ## Phase 1
 
 ### Model
