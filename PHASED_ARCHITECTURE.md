@@ -40,17 +40,18 @@ Daily output is operational guidance, not source extraction.
 
 During market hours, the minimum operational flow is:
 
-1. Download the TOS account statement and place it into the Schwab MCP `config/` folder
-2. Provide a TOS screenshot for validation/context
-3. Use Schwab MCP tools to read open futures positions from the TOS statement
-4. Use Schwab MCP tools to fetch live or latest-available market data for each open-position leg
-5. Use Schwab MCP tools to fetch live or latest-available market data for each published watchlist leg
-6. Calculate current spread values and P/L for open positions from the Schwab MCP side
-7. Calculate current live spread values for watchlist candidates from the Schwab MCP side
-8. Map each open position to its newsletter-aligned exit date
-9. Use Newsletter MCP to add weekly intelligence, rules, conflicts, exits, and interpretation
-10. Include exit-date urgency in the daily action plan
-11. Produce the daily markdown report and action plan
+1. Download the TOS account statement and overwrite the canonical CSV in the Schwab MCP `config/` folder
+2. Overwrite the canonical TOS screenshot used for validation/context
+3. Check both file timestamps to confirm they were updated for the current Daily run
+4. Use Schwab MCP tools to read open futures positions from the TOS statement
+5. Use Schwab MCP tools to fetch live or latest-available market data for each open-position leg
+6. Use Schwab MCP tools to fetch live or latest-available market data for each published watchlist leg
+7. Calculate current spread values and P/L for open positions from the Schwab MCP side
+8. Calculate current live spread values for watchlist candidates from the Schwab MCP side
+9. Map each open position to its newsletter-aligned exit date
+10. Use Newsletter MCP to add weekly intelligence, rules, conflicts, exits, and interpretation
+11. Include exit-date urgency in the daily action plan
+12. Produce the daily markdown report and action plan
 
 This design exists because the Schwab API does not reliably return futures positions; in practice it is limited to stocks and options for this workflow.
 
@@ -119,8 +120,9 @@ In Phase 1, this is already a real relational database and is the system of reco
 Owned by `Schwab MCP`.
 
 In Phase 1, this is not yet a formal DB-first system. It is primarily file-based and live-data-driven:
-- TOS account statement CSV dropped into the Schwab MCP `config/` folder
-- TOS screenshots used for validation/context
+- a single canonical TOS account statement CSV in the Schwab MCP `config/` folder
+- a single canonical TOS screenshot used for validation/context
+- file last-modified timestamps checked to confirm freshness before the Daily run
 - published weekly contract files from Newsletter MCP
 - live or latest-available market data queried through Schwab MCP
 

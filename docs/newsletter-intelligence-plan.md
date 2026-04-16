@@ -42,7 +42,7 @@ The architecture should be understood as two separate data domains:
 
 - owned by `Schwab MCP`
 - file-based in Phase 1
-- uses TOS account statement files, screenshots, published newsletter contract files, and live market queries
+- uses the canonical TOS account statement CSV, the canonical TOS screenshot, published newsletter contract files, and live market queries
 
 This means the practical Phase 1 model is:
 
@@ -128,8 +128,9 @@ Core tables:
 
 The Daily workflow should assume:
 
-- the TOS account statement is downloaded during market hours and dropped into the Schwab MCP `config/` folder
-- a TOS screenshot is also provided for validation/context
+- the TOS account statement is downloaded during market hours and overwrites the canonical CSV in the Schwab MCP `config/` folder
+- the TOS screenshot also overwrites the canonical PNG used for validation/context
+- file timestamps are checked to confirm both inputs were updated for the current Daily run
 - Schwab MCP tools ingest positions from the TOS statement
 - Schwab MCP tools provide live or latest-available market data for each open-position leg
 - Schwab MCP tools also provide live or latest-available market data for each published watchlist leg

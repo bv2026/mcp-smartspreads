@@ -168,17 +168,24 @@ Use newsletter-mcp first, then schwab-smartspreads-file. Ingest the latest newsl
 
 Recommended Daily sequence:
 
-1. `schwab-smartspreads-file`
-   Check stream health, watchlist pricing, and current futures positions.
-2. `newsletter-mcp`
-   Pull the current week’s intelligence, watchlist reference rules, and issue summary.
-3. Claude combines both sources into:
+1. Overwrite the canonical TOS statement CSV in the Schwab MCP `config/` folder.
+2. Overwrite the canonical TOS screenshot PNG used for validation/context.
+3. Confirm both file timestamps show they were updated for the current Daily run.
+4. `schwab-smartspreads-file`
+   Check stream health, import current futures positions from the TOS statement, and price:
+   - open-position legs/spreads
+   - current published watchlist legs/spreads
+5. `newsletter-mcp`
+   Pull the current week's intelligence, watchlist reference rules, issue summary, and newsletter-aligned exit dates.
+6. Claude combines both sources into:
    - morning brief
    - action plan
    - alignment check between current positions and weekly watchlist
+   - exit-date urgency for open positions
 
 Suggested Daily ask:
 
 ```text
-Use newsletter-mcp and schwab-smartspreads-file. Give me a morning brief using the current published newsletter week, my live positions, current watchlist pricing, and the rules that matter for interpreting today’s setups.
+Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-aligned exit dates, and the rules that matter for interpreting today's setups.
 ```
+

@@ -137,22 +137,23 @@ Use these on trading days after the Sunday publication step is complete.
 ### Daily morning brief
 
 ```text
-Use newsletter-mcp and schwab-smartspreads-file. Give me a morning trading brief that combines:
+Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning trading brief that combines:
 - the current published newsletter week
-- today’s live futures/watchlist context
-- my current futures positions
+- today's live futures/watchlist context
+- my imported current futures positions
+- newsletter-aligned exit dates for open positions
 - the highest-priority actions for today
 
-Use newsletter-mcp for weekly intelligence and rules. Use schwab-smartspreads-file for live positions, watchlist pricing, and stream status.
+Use newsletter-mcp for weekly intelligence, rules, and exit interpretation. Use schwab-smartspreads-file for imported positions, live watchlist pricing, live spread pricing, and stream status.
 ```
 
 ### Daily action plan
 
 ```text
-Use newsletter-mcp and schwab-smartspreads-file. Create today’s action plan using the latest published newsletter intelligence plus current Schwab data. Include:
+Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Create today's action plan using the latest published newsletter intelligence plus current Schwab data. Include:
 - open positions that need attention
 - watchlist ideas that are currently actionable
-- exits or dates that are approaching
+- exits due soon or due today
 - conflicts between current positions and the newsletter watchlist
 - the top 3 actions I should consider today
 ```
@@ -160,13 +161,13 @@ Use newsletter-mcp and schwab-smartspreads-file. Create today’s action plan us
 ### Daily watchlist check
 
 ```text
-Use schwab-smartspreads-file first and newsletter-mcp second. Price the current published watchlist, then explain the results in the context of this week’s newsletter reference rules and section summaries.
+Use schwab-smartspreads-file first and newsletter-mcp second. Price the current published watchlist legs and spreads, then explain the results in the context of this week's newsletter reference rules, section summaries, and entry/exit interpretation.
 ```
 
 ### Daily position review
 
 ```text
-Use schwab-smartspreads-file and compare current futures positions against the current published newsletter watchlist. Then use newsletter-mcp to explain whether each position is aligned with this week’s intra/inter ideas and rules.
+Use schwab-smartspreads-file and compare imported current futures positions against the current published newsletter watchlist. Then use newsletter-mcp to explain whether each position is aligned with this week’s intra/inter ideas, rules, and exit dates.
 ```
 
 ### Daily comparison against live workflow
@@ -184,3 +185,4 @@ Use schwab-smartspreads-live and schwab-smartspreads-file. Compare the original 
 - For Sunday work, start with `newsletter-mcp` and treat it as the source of truth for ingestion, publication, and weekly intelligence.
 - For Daily work, use `schwab-smartspreads-file` for live file-based monitoring and `newsletter-mcp` for interpretation, rules, and week-level context.
 - Use `schwab-smartspreads-live` only when you explicitly want to compare the legacy/live workflow against the file-based Phase 1 workflow.
+
