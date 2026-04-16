@@ -247,6 +247,85 @@ class ExitScheduleResolverTests(unittest.TestCase):
         self.assertTrue(corn["matched"])
         self.assertEqual(corn["exit_date"], "2026-08-31")
 
+    def test_get_daily_exit_schedule_accepts_schwab_futures_positions_payload(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base_dir = Path(temp_dir.name)
+        database = Database(f"sqlite:///{(base_dir / 'exit-schedule-daily.db').as_posix()}")
+        database.create_schema()
+        self.addCleanup(database.engine.dispose)
+
+        database_patch = mock.patch.object(server, "database", database)
+        database_patch.start()
+        self.addCleanup(database_patch.stop)
+
+        with database.session() as session:
+            older = _make_newsletter(week_ended=date(2026, 4, 3), source_file="older.pdf")
+            current = _make_newsletter(week_ended=date(2026, 4, 10), source_file="current.pdf")
+            session.add_all([older, current])
+            session.flush()
+            session.add_all(
+                [
+                    _make_watchlist_entry(
+                        newsletter_id=current.id,
+                        commodity_name="Gold",
+                        spread_code="GCQ26-GCZ26",
+                        enter_date=date(2026, 4, 12),
+                        exit_date=date(2026, 7, 5),
+                    ),
+                    _make_watchlist_entry(
+                        newsletter_id=older.id,
+                        commodity_name="Corn",
+                        spread_code="CU26-2*CZ26+CH27",
+                        enter_date=date(2026, 4, 9),
+                        exit_date=date(2026, 8, 31),
+                        trade_quality="Tier 2",
+                    ),
+                ]
+            )
+
+        result = server.get_daily_exit_schedule(
+            schwab_futures_positions={
+                "futures_legs": [
+                    {"symbol": "/GCQ26", "quantity": 1, "spread_id": "gc_calendar_1", "spread_name": "Gold"},
+                    {"symbol": "/GCZ26", "quantity": 1, "spread_id": "gc_calendar_1", "spread_name": "Gold"},
+                    {"symbol": "/ZCU26", "quantity": 1, "spread_id": "zc_butterfly_1", "spread_name": "Corn"},
+                    {"symbol": "/ZCZ26", "quantity": 2, "spread_id": "zc_butterfly_1", "spread_name": "Corn"},
+                    {"symbol": "/ZCH27", "quantity": 1, "spread_id": "zc_butterfly_1", "spread_name": "Corn"},
+                ],
+                "spreads": [
+                    {
+                        "id": "gc_calendar_1",
+                        "name": "Gold Calendar",
+                        "type": "calendar",
+                        "entry_value": -72.2,
+                        "current_value": -71.25,
+                        "spread_pl": 0.95,
+                        "marks_live": False,
+                    },
+                    {
+                        "id": "zc_butterfly_1",
+                        "name": "Corn Butterfly",
+                        "type": "butterfly",
+                        "entry_value": -2.0,
+                        "current_value": -4.875,
+                        "spread_pl": -2.875,
+                        "marks_live": False,
+                    },
+                ],
+            },
+            as_of="2026-04-16",
+        )
+
+        self.assertEqual(result["position_count"], 2)
+        gold, corn = result["positions"]
+        self.assertEqual(gold["exit_date"], "2026-07-05")
+        self.assertEqual(gold["current_value"], -71.25)
+        self.assertEqual(gold["spread_type"], "calendar")
+        self.assertEqual(corn["exit_date"], "2026-08-31")
+        self.assertEqual(corn["entry_value"], -2.0)
+        self.assertEqual(corn["spread_type"], "butterfly")
+
 
 if __name__ == "__main__":
     unittest.main()

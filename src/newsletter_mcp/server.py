@@ -577,6 +577,31 @@ def _resolve_open_position_exit_schedules(
     }
 
 
+def _build_daily_exit_schedule_from_schwab_positions(
+    schwab_futures_positions: dict[str, Any],
+    *,
+    as_of: date,
+) -> dict[str, Any]:
+    futures_legs = schwab_futures_positions.get("futures_legs", [])
+    spread_rows = {
+        row.get("id"): row
+        for row in schwab_futures_positions.get("spreads", [])
+        if isinstance(row, dict) and row.get("id")
+    }
+
+    resolved = _resolve_open_position_exit_schedules(futures_legs, as_of=as_of)
+    for position in resolved["positions"]:
+        spread = spread_rows.get(position.get("position_id"))
+        position["spread_type"] = spread.get("type") if spread else None
+        position["entry_value"] = spread.get("entry_value") if spread else None
+        position["current_value"] = spread.get("current_value") if spread else None
+        position["spread_pl"] = spread.get("spread_pl") if spread else None
+        position["marks_live"] = spread.get("marks_live") if spread else None
+        position["spread_error"] = spread.get("error") if spread else None
+
+    return resolved
+
+
 def _serialize_publication_yaml(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2)
 
@@ -2144,6 +2169,19 @@ def resolve_open_position_exit_schedule(
     """Resolve newsletter-derived exit dates and urgency buckets for open spread positions."""
     as_of_date = _parse_issue_date(as_of) if as_of else _utcnow().date()
     return _resolve_open_position_exit_schedules(positions, as_of=as_of_date)
+
+
+@mcp.tool()
+def get_daily_exit_schedule(
+    schwab_futures_positions: dict[str, Any],
+    as_of: str | None = None,
+) -> dict[str, Any]:
+    """Resolve newsletter-derived exit dates directly from schwab-smartspreads-file get_futures_positions output."""
+    as_of_date = _parse_issue_date(as_of) if as_of else _utcnow().date()
+    return _build_daily_exit_schedule_from_schwab_positions(
+        schwab_futures_positions,
+        as_of=as_of_date,
+    )
 
 
 @mcp.tool()
