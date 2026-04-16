@@ -359,6 +359,23 @@ def _build_issue_brief_draft(
     )
 
 
+def _apply_issue_brief_draft(
+    issue_brief: IssueBrief,
+    *,
+    parser_run_id: int | None,
+    brief_data: IssueBriefDraft,
+) -> None:
+    issue_brief.parser_run_id = parser_run_id
+    issue_brief.brief_status = issue_brief.brief_status or "draft"
+    issue_brief.headline = brief_data.headline
+    issue_brief.executive_summary = brief_data.executive_summary
+    issue_brief.key_themes_json = brief_data.key_themes
+    issue_brief.notable_risks_json = brief_data.notable_risks
+    issue_brief.notable_opportunities_json = brief_data.notable_opportunities
+    issue_brief.watchlist_summary_json = brief_data.watchlist_summary
+    issue_brief.change_summary_json = brief_data.change_summary
+
+
 def _issue_brief_fallback(
     newsletter: Newsletter,
     entries: list[WatchlistEntry],
@@ -520,18 +537,25 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
             summary_text=delta_summary,
         )
         session.add(issue_delta)
+    else:
+        issue_delta.previous_newsletter_id = previous_newsletter.id if previous_newsletter is not None else None
+        issue_delta.delta_status = "generated"
+        issue_delta.added_entries_json = added_entries
+        issue_delta.removed_entries_json = removed_entries
+        issue_delta.changed_entries_json = changed_entries
+        issue_delta.summary_text = delta_summary
 
     issue_brief = session.execute(
         select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
     ).scalar_one_or_none()
+    brief_data = _build_issue_brief_draft(
+        title=newsletter.title,
+        executive_summary=newsletter.overall_summary,
+        entries=list(newsletter.watchlist_entries),
+        delta=issue_delta,
+        reference=newsletter.watchlist_reference,
+    )
     if issue_brief is None:
-        brief_data = _build_issue_brief_draft(
-            title=newsletter.title,
-            executive_summary=newsletter.overall_summary,
-            entries=list(newsletter.watchlist_entries),
-            delta=issue_delta,
-            reference=newsletter.watchlist_reference,
-        )
         session.add(
             IssueBrief(
                 newsletter_id=newsletter.id,
@@ -545,6 +569,12 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
                 watchlist_summary_json=brief_data.watchlist_summary,
                 change_summary_json=brief_data.change_summary,
             )
+        )
+    else:
+        _apply_issue_brief_draft(
+            issue_brief,
+            parser_run_id=parser_run.id,
+            brief_data=brief_data,
         )
 
     publication_run = session.execute(

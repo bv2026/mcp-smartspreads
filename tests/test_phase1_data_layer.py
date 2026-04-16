@@ -304,6 +304,73 @@ class Phase1DataLayerTests(unittest.TestCase):
             self.assertEqual(section.section_type, "watchlist_page")
             self.assertEqual(reference.reference_version, "v1")
 
+    def test_backfill_phase1_intelligence_refreshes_existing_brief_and_delta(self) -> None:
+        first = _make_parsed_newsletter(
+            base_dir=self.base_dir,
+            week_ended=date(2026, 4, 3),
+            rows=[_make_watchlist_row(exit_date=date(2026, 8, 30))],
+        )
+        second = _make_parsed_newsletter(
+            base_dir=self.base_dir,
+            week_ended=date(2026, 4, 10),
+            rows=[
+                _make_watchlist_row(exit_date=date(2026, 9, 2)),
+                _make_watchlist_row(
+                    commodity_name="Soybeans",
+                    spread_code="SU26-SF27",
+                    exit_date=date(2026, 7, 13),
+                ),
+            ],
+        )
+
+        server._save_parsed_newsletter(first)
+        server._save_parsed_newsletter(second)
+
+        with self.database.session() as session:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == date(2026, 4, 10))
+            ).scalar_one()
+            brief = session.execute(
+                select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
+            ).scalar_one()
+            delta = session.execute(
+                select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+            ).scalar_one()
+
+            brief.key_themes_json = []
+            brief.notable_risks_json = []
+            brief.notable_opportunities_json = []
+            brief.watchlist_summary_json = {"entry_count": 2}
+            brief.change_summary_json = {"added_count": 99}
+            delta.added_entries_json = []
+            delta.removed_entries_json = []
+            delta.changed_entries_json = []
+            delta.summary_text = "stale summary"
+
+        result = server.backfill_phase1_intelligence()
+
+        self.assertEqual(result["issue_count"], 2)
+        with self.database.session() as session:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == date(2026, 4, 10))
+            ).scalar_one()
+            brief = session.execute(
+                select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
+            ).scalar_one()
+            delta = session.execute(
+                select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+            ).scalar_one()
+
+            self.assertTrue(brief.key_themes_json)
+            self.assertTrue(brief.notable_risks_json)
+            self.assertTrue(brief.notable_opportunities_json)
+            self.assertIn("volatility_counts", brief.watchlist_summary_json)
+            self.assertEqual(brief.change_summary_json["added_count"], 1)
+            self.assertEqual(len(delta.added_entries_json), 1)
+            self.assertEqual(len(delta.removed_entries_json), 0)
+            self.assertEqual(len(delta.changed_entries_json), 1)
+            self.assertIn("changed 1 carried entries", delta.summary_text)
+
 
 if __name__ == "__main__":
     unittest.main()
