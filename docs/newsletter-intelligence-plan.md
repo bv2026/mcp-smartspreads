@@ -131,9 +131,12 @@ The Daily workflow should assume:
 - the TOS account statement is downloaded during market hours and dropped into the Schwab MCP `config/` folder
 - a TOS screenshot is also provided for validation/context
 - Schwab MCP tools ingest positions from the TOS statement
-- Schwab MCP tools provide live or latest-available market data for each leg
-- Schwab MCP remains the calculation layer for spread values and P/L
+- Schwab MCP tools provide live or latest-available market data for each open-position leg
+- Schwab MCP tools also provide live or latest-available market data for each published watchlist leg
+- Schwab MCP remains the calculation layer for open-position spread values, watchlist spread values, and P/L
 - Newsletter MCP provides weekly intelligence, rules, exits, and interpretation
+- each open position must be mapped to its newsletter-aligned exit date
+- exit-date urgency must be included in the daily action plan
 
 This is necessary because the Schwab API cannot be relied on to return futures positions for this workflow.
 
@@ -144,6 +147,7 @@ Daily workflow should reuse the existing Schwab MCP operational implementation.
 That means:
 - do not rebuild TOS statement ingestion in Newsletter MCP
 - do not rebuild spread-value and P/L calculations in Newsletter MCP
+- do not rebuild live watchlist spread pricing in Newsletter MCP
 - do not replace the current Schwab-side daily markdown structure unless there is a strong reason
 
 Instead, Daily workflow design should:
@@ -166,6 +170,8 @@ Current sections already provide a strong starting point:
 - portfolio summary
 - current portfolio status
 - next actions
+
+Exit dates for open positions are required fields in the Daily workflow, and they must feed directly into the generated action plan.
 
 ## Implementation plan
 

@@ -43,10 +43,14 @@ During market hours, the minimum operational flow is:
 1. Download the TOS account statement and place it into the Schwab MCP `config/` folder
 2. Provide a TOS screenshot for validation/context
 3. Use Schwab MCP tools to read open futures positions from the TOS statement
-4. Use Schwab MCP tools to fetch live or latest-available market data for each leg
-5. Calculate spread values and current P/L from the Schwab MCP side
-6. Use Newsletter MCP to add weekly intelligence, rules, conflicts, exits, and interpretation
-7. Produce the daily markdown report and action plan
+4. Use Schwab MCP tools to fetch live or latest-available market data for each open-position leg
+5. Use Schwab MCP tools to fetch live or latest-available market data for each published watchlist leg
+6. Calculate current spread values and P/L for open positions from the Schwab MCP side
+7. Calculate current live spread values for watchlist candidates from the Schwab MCP side
+8. Map each open position to its newsletter-aligned exit date
+9. Use Newsletter MCP to add weekly intelligence, rules, conflicts, exits, and interpretation
+10. Include exit-date urgency in the daily action plan
+11. Produce the daily markdown report and action plan
 
 This design exists because the Schwab API does not reliably return futures positions; in practice it is limited to stocks and options for this workflow.
 
@@ -82,6 +86,7 @@ In particular, Schwab MCP remains the operational engine for:
 - live leg pricing
 - spread-value calculations
 - current P/L
+- live watchlist spread valuation
 - daily operational markdown generation
 
 Newsletter MCP should augment this with:
@@ -90,6 +95,7 @@ Newsletter MCP should augment this with:
 - issue briefs
 - issue deltas
 - newsletter-aligned conflict and exit interpretation
+- exit-date context for open positions and action prioritization
 
 ## Two data domains
 
@@ -285,11 +291,13 @@ The two MCPs should share a contract, not a writable DB.
 ## Daily workflow target design
 
 1. Pull positions and prices from Schwab MCP
-2. Read current approved weekly publication
-3. Combine live data with weekly intelligence
-4. Calculate daily P/L and operational changes
-5. Produce daily report and action plan
-6. In Phase 2, persist daily operational memory
+2. Pull live pricing for current published watchlist legs and spreads from Schwab MCP
+3. Read current approved weekly publication
+4. Combine live data with weekly intelligence
+5. Map open positions to newsletter-derived exit dates
+6. Calculate daily P/L, operational changes, and exit urgency
+7. Produce daily report and action plan
+8. In Phase 2, persist daily operational memory
 
 ### Seed daily report contract
 
@@ -306,6 +314,13 @@ The current useful sections are:
 - portfolio summary
 - current portfolio status
 - next actions
+
+Exit dates for open positions are required operational fields and must feed into the action plan.
+
+The action plan should explicitly include:
+- exits due soon
+- exits due today
+- positions whose urgency is driven by the exit calendar
 
 The design goal is to formalize and persist this workflow, not replace it with a brand-new reporting format.
 
