@@ -377,12 +377,71 @@ def _build_watchlist_publication_entry(
     }
 
 
+def _normalize_exit_positions(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    passthrough: list[dict[str, Any]] = []
+
+    for index, position in enumerate(positions):
+        spread_id = position.get("spread_id")
+        symbol = position.get("symbol")
+        legs = position.get("legs")
+        if spread_id and symbol and not legs:
+            key = str(spread_id)
+            group = grouped.setdefault(
+                key,
+                {
+                    "id": key,
+                    "name": position.get("spread_name") or position.get("name") or key,
+                    "legs": [],
+                    "leg_quantities": {},
+                },
+            )
+            normalized_symbol = str(symbol).strip().upper()
+            if normalized_symbol:
+                leg_quantities: dict[str, int] = group["leg_quantities"]
+                leg_quantities[normalized_symbol] = leg_quantities.get(normalized_symbol, 0) + abs(
+                    int(position.get("quantity") or 0)
+                )
+            continue
+
+        normalized = dict(position)
+        normalized.setdefault("id", position.get("id") or position.get("position_id") or f"position_{index}")
+        normalized.setdefault("name", position.get("name") or position.get("position_name"))
+        passthrough.append(normalized)
+
+    normalized_positions = passthrough
+    normalized_positions.extend(grouped.values())
+    return normalized_positions
+
+
 def _expand_position_legs(position: dict[str, Any]) -> list[str]:
     expanded = position.get("expanded_legs")
     if expanded:
         return [symbol.strip().upper() for symbol in expanded if symbol and symbol.strip()]
 
     leg_quantities = position.get("leg_quantities")
+    if isinstance(leg_quantities, list):
+        legs = position.get("legs", [])
+        if len(legs) == len(leg_quantities):
+            normalized_quantities = [
+                abs(int(quantity))
+                for quantity in leg_quantities
+                if quantity not in (None, 0, "0")
+            ]
+            divisor = 0
+            for quantity in normalized_quantities:
+                divisor = quantity if divisor == 0 else gcd(divisor, quantity)
+            divisor = max(divisor, 1)
+
+            values: list[str] = []
+            for symbol, quantity in zip(legs, leg_quantities):
+                if not symbol or not str(symbol).strip():
+                    continue
+                copies = max(abs(int(quantity)) // divisor, 1)
+                values.extend([str(symbol).strip().upper()] * copies)
+            if values:
+                return values
+
     if isinstance(leg_quantities, dict):
         normalized_quantities = [
             abs(int(quantity))
@@ -430,6 +489,7 @@ def _resolve_open_position_exit_schedules(
     *,
     as_of: date,
 ) -> dict[str, Any]:
+    normalized_positions = _normalize_exit_positions(positions)
     with database.session() as session:
         current_issue = session.execute(
             select(Newsletter).order_by(desc(Newsletter.week_ended))
@@ -464,12 +524,12 @@ def _resolve_open_position_exit_schedules(
 
     results: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
-    for position in positions:
+    for position in normalized_positions:
         signature = _position_leg_signature(_expand_position_legs(position))
         matches = entries_by_signature.get(signature, [])
         result: dict[str, Any] = {
-            "position_id": position.get("id"),
-            "position_name": position.get("name"),
+            "position_id": position.get("id") or position.get("position_id"),
+            "position_name": position.get("name") or position.get("position_name"),
             "legs": list(signature),
             "matched": False,
             "alignment_status": "unmatched",
@@ -511,7 +571,7 @@ def _resolve_open_position_exit_schedules(
     return {
         "as_of": as_of.isoformat(),
         "current_issue_week_ended": current_issue.week_ended.isoformat() if current_issue is not None else None,
-        "position_count": len(positions),
+        "position_count": len(normalized_positions),
         "urgency_counts": dict(counts),
         "positions": results,
     }
