@@ -96,6 +96,8 @@ This design intentionally avoids:
 - action-plan prioritization
 - narrative interpretation of conflicts, exits, and opportunities
 
+In Daily workflow v1, the screenshot is an operator/Claude validation artifact. It is not currently machine-parsed by `schwab-smartspreads-file`, so its role is to support visual cross-checking rather than automated calculations.
+
 ## Daily workflow sequence
 
 ### Step 1. Freshness check
