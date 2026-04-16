@@ -213,6 +213,7 @@ The current Claude-generated markdown should be treated as the seed contract and
    - positions not aligned
    - conflicting exposures
    - blocked ideas that should not be acted on
+   - manual-leg-only ideas that should not be treated like native spread entries
 
 7. `Weekly intelligence context`
    - current week themes
@@ -245,6 +246,10 @@ The action plan should always include:
 
 - `supporting context`
   brief reference to the weekly intelligence or live pricing condition
+
+- `support condition`
+  note when a watchlist idea is valid but operationally limited, such as
+  `manual_legs_required` or lack of streaming support
 
 ### Priority order
 
