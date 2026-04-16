@@ -377,6 +377,12 @@ These are the main operational tools from `schwab-smartspreads-file`:
 
 These are the main weekly-intelligence tools from `newsletter-mcp`:
 
+- `get_daily_exit_schedule`
+  - preferred Daily exit-resolution tool when you already have `schwab-smartspreads-file.get_futures_positions`
+  - accepts the Schwab futures-positions payload directly
+  - resolves current-watchlist matches, legacy carryovers, broker-symbol mappings, and quantity-aware butterflies
+  - returns a merged daily exit schedule with spread values attached
+
 - `get_issue_summary`
   - primary Daily intelligence tool
   - returns the issue brief, issue delta, and watchlist reference in one response
@@ -403,10 +409,11 @@ For a standard Daily run, the preferred order is:
 
 1. `schwab-smartspreads-file.get_stream_status`
 2. `schwab-smartspreads-file.get_futures_positions`
-3. `schwab-smartspreads-file.get_watchlist_quotes`
-4. `newsletter-mcp.get_issue_summary`
-5. `newsletter-mcp.get_watchlist` only if row-level alignment detail is needed
-6. targeted follow-up with `get_spread_value_live`, `get_live_quote`, or `get_recent_bars` only when necessary
+3. `newsletter-mcp.get_daily_exit_schedule`
+4. `schwab-smartspreads-file.get_watchlist_quotes`
+5. `newsletter-mcp.get_issue_summary`
+6. `newsletter-mcp.get_watchlist` only if row-level alignment detail is needed
+7. targeted follow-up with `get_spread_value_live`, `get_live_quote`, or `get_recent_bars` only when necessary
 
 This keeps the Daily flow simple and avoids over-calling tools during normal review.
 
@@ -454,8 +461,9 @@ From schwab-smartspreads-file:
 - price the current published watchlist
 
 From newsletter-mcp:
-- get the current issue summary
-- use the stored issue brief, watchlist rules, issue delta, and newsletter-aligned exit dates
+ - use get_daily_exit_schedule with the Schwab futures-positions result
+ - get the current issue summary
+ - use the stored issue brief, watchlist rules, issue delta, and newsletter-aligned exit dates
 
 Then produce today's daily markdown report and action plan. Include:
 - run status

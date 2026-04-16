@@ -177,10 +177,11 @@ Recommended Daily sequence:
    - current published watchlist legs/spreads
 5. `newsletter-mcp`
    Pull the current week's intelligence, watchlist reference rules, issue summary, and newsletter-aligned exit dates.
+   Prefer `get_daily_exit_schedule(...)` when you already have the `get_futures_positions` result from Schwab MCP.
    This now includes:
-   - current-issue matches where the open spread is still in the latest watchlist
-   - legacy-carryover matches from older newsletters when the spread is no longer in the current issue
-   - quantity-aware matching for butterfly structures
+    - current-issue matches where the open spread is still in the latest watchlist
+    - legacy-carryover matches from older newsletters when the spread is no longer in the current issue
+    - quantity-aware matching for butterfly structures
 6. Claude combines both sources into:
    - morning brief
    - action plan
@@ -197,6 +198,6 @@ Known Daily limitations:
 Suggested Daily ask:
 
 ```text
-Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-history-backed exit dates, and the rules that matter for interpreting today's setups. Treat valid-but-manual-leg symbols separately from normal native spread entries.
+Use schwab-smartspreads-file first to get today's futures positions and watchlist pricing, then use newsletter-mcp get_daily_exit_schedule on that positions result. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-history-backed exit dates, and the rules that matter for interpreting today's setups. Treat valid-but-manual-leg symbols separately from normal native spread entries.
 ```
 
