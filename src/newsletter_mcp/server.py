@@ -36,6 +36,13 @@ PARSER_VERSION = "phase1-v1"
 PUBLICATION_SCHEMA_VERSION = "1.0"
 CONTRACT_CODE_RE = re.compile(r"^(?P<root>[A-Z]+)(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
 SPREAD_TOKEN_RE = re.compile(r"([+-]?)(?:(\d+)\*)?([A-Z]+[FGHJKMNQUVXZ]\d{2})")
+COMMODITY_DETAILS_ROW_RE = re.compile(
+    r"(?P<commodity>[A-Za-z0-9#&/().' -]+?)\s+"
+    r"(?P<exchange>NYMEX|COMEX|CBOT|KCBT|CME|NYCE|LIF|ICE)\s+"
+    r"(?P<unit>[\d,]+)\s+"
+    r"(?P<newsletter_root>[A-Z]{1,3})\s+"
+    r"(?P<schwab_root>[A-Z]{1,4})"
+)
 ROOT_SYMBOL_MAP = {
     "BO": "/ZL",
     "C": "/ZC",
@@ -333,6 +340,57 @@ def _normalize_catalog_text(value: str | None) -> str:
         return ""
     cleaned = value.replace("\ufeff", "").replace("Â®", "®").replace("Â", "").strip()
     return cleaned
+
+
+def _extract_commodity_details_text(raw_text: str) -> str:
+    normalized = _normalize_catalog_text(raw_text)
+    match = re.search(r"commodity\s+details", normalized, flags=re.IGNORECASE)
+    if match is None:
+        return ""
+    tail = normalized[match.start():]
+    stop_candidates = [
+        index
+        for index in [
+            tail.lower().find("what to expect from"),
+            tail.lower().find("watch list"),
+            tail.lower().find("trade calendar"),
+        ]
+        if index > 0
+    ]
+    if stop_candidates:
+        tail = tail[: min(stop_candidates)]
+    return tail
+
+
+def _parse_newsletter_commodity_rows(raw_text: str) -> list[dict[str, Any]]:
+    details_text = _extract_commodity_details_text(raw_text)
+    if not details_text:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    seen_roots: set[str] = set()
+    for match in COMMODITY_DETAILS_ROW_RE.finditer(details_text):
+        newsletter_root = match.group("newsletter_root").strip().upper()
+        if newsletter_root in seen_roots:
+            continue
+        seen_roots.add(newsletter_root)
+
+        commodity_name = " ".join(match.group("commodity").split())
+        exchange = match.group("exchange").strip().upper()
+        preferred_root = f"/{match.group('schwab_root').strip().upper()}"
+        policy_block_reason = ROOT_BLOCK_REASONS.get(newsletter_root)
+        rows.append(
+            {
+                "newsletter_root": newsletter_root,
+                "commodity_name": commodity_name,
+                "exchange": exchange,
+                "preferred_schwab_root": preferred_root,
+                "is_tradeable_by_policy": False if policy_block_reason else None,
+                "policy_block_reason": policy_block_reason,
+            }
+        )
+
+    return rows
 
 
 def _parse_yes_no(value: str | None) -> bool | None:
@@ -1271,6 +1329,73 @@ def list_newsletter_commodity_catalog(limit: int = 50) -> dict[str, Any]:
         return {
             "count": len(rows),
             "rows": [_serialize_newsletter_commodity_mapping(row) for row in rows],
+        }
+
+
+@mcp.tool()
+def import_newsletter_commodity_catalog(week_ended: str | None = None) -> dict[str, Any]:
+    """Import newsletter commodity/root mappings from the Commodity Details page of an issue."""
+    with database.session() as session:
+        if week_ended:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == _parse_issue_date(week_ended))
+            ).scalar_one_or_none()
+            if newsletter is None:
+                raise ValueError(f"No newsletter found for {week_ended}")
+        else:
+            newsletter = session.execute(
+                select(Newsletter).order_by(desc(Newsletter.week_ended))
+            ).scalars().first()
+            if newsletter is None:
+                raise ValueError("No newsletters available to import commodity mappings from.")
+
+        parsed_rows = _parse_newsletter_commodity_rows(newsletter.raw_text)
+        if not parsed_rows:
+            raise ValueError(
+                f"No commodity details rows were parsed from newsletter {newsletter.week_ended.isoformat()}."
+            )
+
+        imported = 0
+        updated = 0
+        for row in parsed_rows:
+            existing = session.execute(
+                select(NewsletterCommodityCatalog).where(
+                    NewsletterCommodityCatalog.newsletter_root == row["newsletter_root"]
+                )
+            ).scalar_one_or_none()
+
+            if existing is None:
+                session.add(
+                    NewsletterCommodityCatalog(
+                        newsletter_root=row["newsletter_root"],
+                        commodity_name=row["commodity_name"],
+                        exchange=row["exchange"],
+                        preferred_schwab_root=row["preferred_schwab_root"],
+                        is_tradeable_by_policy=row["is_tradeable_by_policy"],
+                        policy_block_reason=row["policy_block_reason"],
+                        source_issue_week=newsletter.week_ended,
+                        source_page_number=2,
+                        metadata_json={},
+                    )
+                )
+                imported += 1
+                continue
+
+            existing.commodity_name = row["commodity_name"]
+            existing.exchange = row["exchange"]
+            existing.preferred_schwab_root = row["preferred_schwab_root"]
+            existing.is_tradeable_by_policy = row["is_tradeable_by_policy"]
+            existing.policy_block_reason = row["policy_block_reason"]
+            existing.source_issue_week = newsletter.week_ended
+            existing.source_page_number = 2
+            updated += 1
+
+        return {
+            "week_ended": newsletter.week_ended.isoformat(),
+            "row_count": len(parsed_rows),
+            "imported_count": imported,
+            "updated_count": updated,
+            "newsletter_roots": [row["newsletter_root"] for row in parsed_rows],
         }
 
 

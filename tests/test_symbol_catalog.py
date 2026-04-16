@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
 from sqlalchemy import select
 
 from newsletter_mcp import server
-from newsletter_mcp.database import Database, SchwabFuturesCatalog
+from newsletter_mcp.database import Database, Newsletter, NewsletterCommodityCatalog, SchwabFuturesCatalog
 
 
 CATALOG_CSV = """Micros,,,,,,
@@ -109,6 +110,61 @@ class SymbolCatalogTests(unittest.TestCase):
         self.assertEqual(root, "VX")
         self.assertIsNone(blocked_reason)
         self.assertEqual(tos_symbol, "/VXMN26")
+
+    def test_parse_newsletter_commodity_rows_extracts_details(self) -> None:
+        raw_text = (
+            "Smart Spreads Commodity  Details Month Symbol Commodity Exchange $/Unit "
+            "Newsletter / Pit Symbol Globex Symbol "
+            "Crude Oil (WTI) NYMEX 1,000 CL CL "
+            "Hard Red Wheat KCBT 50 KW KE "
+            "Feeder Cattle CME 500 FC GF "
+            "What to Expect From"
+        )
+
+        rows = server._parse_newsletter_commodity_rows(raw_text)
+
+        self.assertEqual(
+            [row["newsletter_root"] for row in rows],
+            ["CL", "KW", "FC"],
+        )
+        self.assertEqual(rows[1]["preferred_schwab_root"], "/KE")
+        self.assertEqual(rows[2]["preferred_schwab_root"], "/GF")
+        self.assertEqual(rows[2]["policy_block_reason"], "Feeder Cattle is in the doghouse and should never be traded.")
+
+    def test_import_newsletter_commodity_catalog_from_issue(self) -> None:
+        with self.database.session() as session:
+            session.add(
+                Newsletter(
+                    source_file="issue.pdf",
+                    file_hash="issue-hash",
+                    title="Week Ended 2026-04-10",
+                    week_ended=date(2026, 4, 10),
+                    raw_text=(
+                        "Commodity  Details Month Symbol Commodity Exchange $/Unit "
+                        "Newsletter / Pit Symbol Globex Symbol "
+                        "Crude Oil (WTI) NYMEX 1,000 CL CL "
+                        "Hard Red Wheat KCBT 50 KW KE "
+                        "Volatility Index CBOT 1,000 VX VX "
+                        "What to Expect From"
+                    ),
+                    overall_summary="summary",
+                    metadata_json={},
+                )
+            )
+
+        result = server.import_newsletter_commodity_catalog("2026-04-10")
+
+        self.assertEqual(result["row_count"], 3)
+        self.assertEqual(result["imported_count"], 3)
+
+        with self.database.session() as session:
+            rows = session.execute(
+                select(NewsletterCommodityCatalog).order_by(NewsletterCommodityCatalog.newsletter_root)
+            ).scalars().all()
+
+        self.assertEqual([row.newsletter_root for row in rows], ["CL", "KW", "VX"])
+        self.assertEqual(rows[1].preferred_schwab_root, "/KE")
+        self.assertEqual(rows[1].source_issue_week, date(2026, 4, 10))
 
 
 if __name__ == "__main__":
