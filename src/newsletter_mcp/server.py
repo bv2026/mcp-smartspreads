@@ -815,6 +815,16 @@ def _parse_issue_date(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def _refresh_issue_records(session: Any, week_ended: str) -> tuple[Newsletter, dict[str, Any]]:
+    newsletter = session.execute(
+        select(Newsletter).where(Newsletter.week_ended == _parse_issue_date(week_ended))
+    ).scalar_one_or_none()
+    if newsletter is None:
+        raise ValueError(f"No newsletter found for {week_ended}")
+    seeded = _seed_phase1_records(session, newsletter)
+    return newsletter, seeded
+
+
 @mcp.tool()
 def ingest_newsletter(pdf_path: str | None = None) -> dict[str, Any]:
     """Parse a newsletter PDF and store issue metadata, summaries, and watchlist rows."""
@@ -863,6 +873,35 @@ def backfill_phase1_intelligence() -> dict[str, Any]:
             "issue_count": len(newsletters),
             "results": results,
         }
+
+
+@mcp.tool()
+def refresh_and_publish_issue(
+    week_ended: str,
+    output_dir: str | None = None,
+    publication_version: str | None = None,
+    published_by: str | None = None,
+) -> dict[str, Any]:
+    """Refresh stored Phase 1 intelligence for an issue, then publish the latest artifacts."""
+    with database.session() as session:
+        newsletter, seeded = _refresh_issue_records(session, week_ended)
+        refreshed_summary = {
+            "week_ended": newsletter.week_ended.isoformat(),
+            "parser_run_id": seeded["parser_run_id"],
+            "delta_summary": seeded["delta_summary"],
+            "issue_status": newsletter.issue_status,
+        }
+
+    published = publish_issue(
+        week_ended=week_ended,
+        output_dir=output_dir,
+        publication_version=publication_version,
+        published_by=published_by,
+    )
+    return {
+        "refreshed": refreshed_summary,
+        "published": published,
+    }
 
 
 @mcp.tool()

@@ -158,6 +158,53 @@ class PublicationContractTests(unittest.TestCase):
             self.assertEqual(len(artifacts), 4)
             self.assertTrue(all(entry.publication_state == "published" for entry in entries))
 
+    def test_refresh_and_publish_issue_rebuilds_stale_brief_before_publishing(self) -> None:
+        with self.database.session() as session:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == date(2026, 4, 10))
+            ).scalar_one()
+            brief = session.execute(
+                select(server.IssueBrief).where(server.IssueBrief.newsletter_id == newsletter.id)
+            ).scalar_one()
+            delta = session.execute(
+                select(server.IssueDelta).where(server.IssueDelta.newsletter_id == newsletter.id)
+            ).scalar_one()
+
+            brief.key_themes_json = []
+            brief.notable_risks_json = []
+            brief.notable_opportunities_json = []
+            brief.watchlist_summary_json = {"entry_count": 2}
+            delta.summary_text = "stale summary"
+
+        output_dir = self.base_dir / "refreshed-published"
+        result = server.refresh_and_publish_issue(
+            week_ended="2026-04-10",
+            output_dir=str(output_dir),
+            publication_version="published-refresh",
+            published_by="unit-test",
+        )
+
+        self.assertEqual(result["refreshed"]["week_ended"], "2026-04-10")
+        self.assertEqual(result["published"]["publication_version"], "published-refresh")
+
+        intelligence_payload = json.loads((output_dir / "weekly_intelligence.json").read_text(encoding="utf-8"))
+        issue_brief = intelligence_payload["issue_brief"]
+        self.assertTrue(issue_brief["key_themes"])
+        self.assertTrue(issue_brief["notable_risks"])
+        self.assertTrue(issue_brief["notable_opportunities"])
+        self.assertIn("blocked_count", issue_brief["watchlist_summary"])
+        self.assertNotEqual(issue_brief["change_summary"]["summary_text"], "stale summary")
+
+        with self.database.session() as session:
+            newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == date(2026, 4, 10))
+            ).scalar_one()
+            brief = session.execute(
+                select(server.IssueBrief).where(server.IssueBrief.newsletter_id == newsletter.id)
+            ).scalar_one()
+            self.assertTrue(brief.key_themes_json)
+            self.assertIn("blocked_count", brief.watchlist_summary_json)
+
 
 if __name__ == "__main__":
     unittest.main()
