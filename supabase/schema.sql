@@ -197,6 +197,62 @@ create table if not exists public.contract_month_codes (
   metadata jsonb not null default '{}'::jsonb
 );
 
+create table if not exists public.strategy_documents (
+  id bigserial primary key,
+  title text not null,
+  source_file text not null unique,
+  file_hash text not null unique,
+  document_type text not null,
+  author text,
+  version_label text,
+  published_year integer,
+  page_count integer,
+  raw_text text not null,
+  summary_text text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.strategy_sections (
+  id bigserial primary key,
+  strategy_document_id bigint not null references public.strategy_documents(id) on delete cascade,
+  part_number integer,
+  part_title text,
+  chapter_number integer,
+  chapter_title text not null,
+  section_label text,
+  page_start integer,
+  page_end integer,
+  heading_path text,
+  body_text text not null,
+  summary_text text,
+  keywords jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  unique (strategy_document_id, chapter_number)
+);
+
+create table if not exists public.strategy_principles (
+  id bigserial primary key,
+  strategy_document_id bigint not null references public.strategy_documents(id) on delete cascade,
+  strategy_section_id bigint references public.strategy_sections(id) on delete set null,
+  principle_key text not null,
+  principle_title text not null,
+  category text not null,
+  priority integer,
+  summary_text text not null,
+  guidance_text text,
+  applies_to jsonb not null default '[]'::jsonb,
+  examples jsonb not null default '[]'::jsonb,
+  anti_patterns jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  unique (strategy_document_id, principle_key)
+);
+
 create index if not exists idx_newsletters_week_ended on public.newsletters (week_ended desc);
 create index if not exists idx_newsletters_issue_status on public.newsletters (issue_status);
 create index if not exists idx_parser_runs_newsletter_id on public.parser_runs (newsletter_id);
@@ -222,6 +278,12 @@ create index if not exists idx_newsletter_commodity_catalog_globex_root on publi
 create index if not exists idx_newsletter_commodity_catalog_broker_root on public.newsletter_commodity_catalog (broker_symbol_root);
 create index if not exists idx_newsletter_commodity_catalog_preferred_root on public.newsletter_commodity_catalog (preferred_schwab_root);
 create unique index if not exists idx_contract_month_codes_code on public.contract_month_codes (month_code);
+create unique index if not exists idx_strategy_documents_source_file on public.strategy_documents (source_file);
+create unique index if not exists idx_strategy_documents_file_hash on public.strategy_documents (file_hash);
+create index if not exists idx_strategy_sections_document_id on public.strategy_sections (strategy_document_id);
+create index if not exists idx_strategy_sections_chapter_number on public.strategy_sections (chapter_number);
+create unique index if not exists idx_strategy_principles_document_key on public.strategy_principles (strategy_document_id, principle_key);
+create index if not exists idx_strategy_principles_category on public.strategy_principles (category);
 
 alter table public.newsletters enable row level security;
 alter table public.parser_runs enable row level security;
@@ -235,6 +297,9 @@ alter table public.publication_artifacts enable row level security;
 alter table public.schwab_futures_catalog enable row level security;
 alter table public.newsletter_commodity_catalog enable row level security;
 alter table public.contract_month_codes enable row level security;
+alter table public.strategy_documents enable row level security;
+alter table public.strategy_sections enable row level security;
+alter table public.strategy_principles enable row level security;
 
 create policy "service role full access newsletters"
 on public.newsletters
@@ -315,6 +380,27 @@ with check (true);
 
 create policy "service role full access contract_month_codes"
 on public.contract_month_codes
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access strategy_documents"
+on public.strategy_documents
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access strategy_sections"
+on public.strategy_sections
+for all
+to service_role
+using (true)
+with check (true);
+
+create policy "service role full access strategy_principles"
+on public.strategy_principles
 for all
 to service_role
 using (true)

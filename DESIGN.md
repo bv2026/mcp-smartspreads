@@ -164,6 +164,31 @@ Recommended model:
 
 This layer is needed because the newsletter and Schwab are separate naming systems, and publication logic needs a data-driven crosswalk rather than a fixed dictionary in code.
 
+## Strategy knowledge layer
+
+The next major knowledge layer should incorporate the Smart Spreads strategy manual as durable doctrine, separate from weekly newsletters.
+
+Recommended model:
+
+- `strategy_documents`
+  stores strategy source-document metadata and extracted raw text
+
+- `strategy_sections`
+  stores chapter/section-level extracted text and summaries
+
+- `strategy_principles`
+  stores normalized framework principles such as trade quality, portfolio fit, survivability, volatility, and execution discipline
+
+This layer should improve:
+- issue brief explanations
+- blocked-trade explanations
+- daily action-plan reasoning
+
+It should not:
+- replace weekly newsletter parsing
+- inject raw strategy text directly into watchlist tables
+- require raw PDF parsing at runtime for normal use
+
 ## Main tradeoffs
 
 ### Strengths

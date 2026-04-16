@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from pypdf import PdfReader
 from sqlalchemy import desc, select
 
 from .config import Settings
@@ -28,6 +29,9 @@ from .database import (
     ParserRun,
     PublicationArtifact,
     PublicationRun,
+    StrategyDocument,
+    StrategyPrinciple,
+    StrategySection,
     SchwabFuturesCatalog,
     WatchlistEntry,
     WatchlistReferenceRecord,
@@ -95,6 +99,88 @@ MONTH_NAME_ORDER = [
     "November",
     "December",
 ]
+DEFAULT_STRATEGY_MANUAL_PATH = Path(r"C:\work\SmartSpreads\reference\strategy\The Smart Spreads Strategy S.pdf")
+STRATEGY_CHAPTER_RE = re.compile(r"Chapter\s+(?P<number>\d+)\s+[—–-]\s+(?P<title>.+)")
+STRATEGY_PART_RE = re.compile(r"Part\s+(?P<number>[IVX]+)\s+[—–-]\s+(?P<title>.+)")
+STRATEGY_PRINCIPLE_SEED = [
+    {
+        "principle_key": "structure_before_conviction",
+        "principle_title": "Structure Before Conviction",
+        "category": "philosophy",
+        "priority": 1,
+        "summary_text": "The framework prefers structurally durable spread relationships over subjective conviction or directional opinion.",
+        "guidance_text": "Use structure and historical persistence as the primary filter before acting on a weekly idea.",
+        "chapter_number": 8,
+        "applies_to": ["issue_brief", "daily_brief", "action_plan"],
+        "anti_patterns": ["trading from conviction alone", "overweighting attractive narratives"],
+    },
+    {
+        "principle_key": "selectivity_not_participation",
+        "principle_title": "Selectivity, Not Participation",
+        "category": "trade_selection",
+        "priority": 1,
+        "summary_text": "Not all markets or spread structures deserve capital; selectivity is itself part of the edge.",
+        "guidance_text": "Prefer a smaller set of structurally qualified ideas over broad participation in every seasonal pattern.",
+        "chapter_number": 9,
+        "applies_to": ["issue_brief", "blocked_trade_explanation", "action_plan"],
+        "anti_patterns": ["overtrading", "equating frequency with edge"],
+    },
+    {
+        "principle_key": "trade_selection_dominates_trade_management",
+        "principle_title": "Trade Selection Dominates Trade Management",
+        "category": "trade_selection",
+        "priority": 1,
+        "summary_text": "The quality of the trade chosen matters more than later attempts to rescue weak structures with management tricks.",
+        "guidance_text": "Emphasize screening, filtering, and qualification before discussing exits, stops, or profit taking.",
+        "chapter_number": 11,
+        "applies_to": ["issue_brief", "daily_brief", "blocked_trade_explanation"],
+        "anti_patterns": ["using management to justify weak entries"],
+    },
+    {
+        "principle_key": "volatility_as_constraint",
+        "principle_title": "Volatility Is a Structural Constraint",
+        "category": "volatility",
+        "priority": 2,
+        "summary_text": "Volatility should be treated as a design and survivability constraint, not merely a market condition.",
+        "guidance_text": "Use volatility structure to shape position selection, holding expectations, and action-plan confidence.",
+        "chapter_number": 10,
+        "applies_to": ["issue_brief", "daily_brief", "portfolio_fit"],
+        "anti_patterns": ["ignoring volatility structure", "assuming carry always dominates volatility"],
+    },
+    {
+        "principle_key": "margin_as_survivability_constraint",
+        "principle_title": "Margin Is a Survivability Constraint",
+        "category": "margin",
+        "priority": 2,
+        "summary_text": "Exchange margin is a minimum clearing requirement, not a permission slip for full capital usage.",
+        "guidance_text": "Use margin to judge staying power and resilience, not to maximize deployed exposure.",
+        "chapter_number": 16,
+        "applies_to": ["daily_brief", "portfolio_fit", "action_plan"],
+        "anti_patterns": ["treating margin as target utilization", "sizing positions to the clearing minimum"],
+    },
+    {
+        "principle_key": "portfolio_fit_over_isolated_trade_appeal",
+        "principle_title": "Portfolio Fit Over Isolated Trade Appeal",
+        "category": "portfolio_construction",
+        "priority": 2,
+        "summary_text": "A trade should be judged not only on standalone merit but on how it changes concentration, overlap, and resilience in the portfolio.",
+        "guidance_text": "Flag leg overlap and same-theme concentration as portfolio-fit issues, not just execution details.",
+        "chapter_number": 14,
+        "applies_to": ["daily_brief", "action_plan", "portfolio_fit"],
+        "anti_patterns": ["adding overlapping exposure without review"],
+    },
+    {
+        "principle_key": "intercommodity_conditional_edge",
+        "principle_title": "Inter-Commodity Edge Is Conditional",
+        "category": "intercommodity",
+        "priority": 3,
+        "summary_text": "Inter-commodity spreads can have edge, but they require stricter structural discipline than standard calendars.",
+        "guidance_text": "Treat inter-commodity opportunities as conditional and more constraint-sensitive than single-market calendars.",
+        "chapter_number": 23,
+        "applies_to": ["issue_brief", "blocked_trade_explanation"],
+        "anti_patterns": ["treating inter-commodity spreads like ordinary calendars"],
+    },
+]
 
 
 def _utcnow() -> datetime:
@@ -120,6 +206,14 @@ def _seed_record(parsed) -> dict[str, Any]:
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _normalize_key_part(value: str) -> str:
@@ -154,6 +248,162 @@ def _classify_section_type(section_name: str) -> str:
     if "macro" in name:
         return "macro_commentary"
     return "article"
+
+
+def _int_from_roman(value: str | None) -> int | None:
+    if value is None:
+        return None
+    mapping = {"I": 1, "V": 5, "X": 10}
+    total = 0
+    previous = 0
+    for char in reversed(value.upper()):
+        current = mapping.get(char, 0)
+        if current < previous:
+            total -= current
+        else:
+            total += current
+            previous = current
+    return total or None
+
+
+def _extract_strategy_pdf(path: Path) -> dict[str, Any]:
+    reader = PdfReader(str(path))
+    pages: list[dict[str, Any]] = []
+    current_part_number: int | None = None
+    current_part_title: str | None = None
+    chapter_starts: list[dict[str, Any]] = []
+
+    for page_index, page in enumerate(reader.pages, start=1):
+        raw_text = page.extract_text() or ""
+        normalized_lines = [" ".join(line.split()) for line in raw_text.splitlines() if line.strip()]
+        page_text = "\n".join(normalized_lines)
+        pages.append({"page_number": page_index, "text": page_text})
+        chapter_matches_on_page = sum(1 for line in normalized_lines if STRATEGY_CHAPTER_RE.search(line))
+        is_contents_page = bool(
+            (normalized_lines and normalized_lines[0].lower() == "contents")
+            or chapter_matches_on_page > 1
+        )
+
+        for line in normalized_lines:
+            part_match = STRATEGY_PART_RE.search(line)
+            if part_match:
+                current_part_number = _int_from_roman(part_match.group("number"))
+                current_part_title = part_match.group("title").strip()
+        if is_contents_page:
+            continue
+        for line in normalized_lines:
+            chapter_match = STRATEGY_CHAPTER_RE.search(line)
+            if chapter_match:
+                chapter_number = int(chapter_match.group("number"))
+                title = chapter_match.group("title").strip()
+                if not any(existing["chapter_number"] == chapter_number for existing in chapter_starts):
+                    chapter_starts.append(
+                        {
+                            "chapter_number": chapter_number,
+                            "chapter_title": title,
+                            "part_number": current_part_number,
+                            "part_title": current_part_title,
+                            "page_start": page_index,
+                        }
+                    )
+                break
+
+    sections: list[dict[str, Any]] = []
+    for index, start in enumerate(chapter_starts):
+        next_page = chapter_starts[index + 1]["page_start"] if index + 1 < len(chapter_starts) else len(pages) + 1
+        section_pages = [page for page in pages if start["page_start"] <= page["page_number"] < next_page]
+        body_text = "\n\n".join(page["text"] for page in section_pages if page["text"]).strip()
+        first_paragraph = next((part.strip() for part in body_text.split("\n\n") if part.strip()), "")
+        summary_text = first_paragraph[:800] if first_paragraph else None
+        keywords = sorted(
+            {
+                keyword
+                for keyword in ["structure", "seasonality", "trade quality", "volatility", "margin", "portfolio", "execution", "inter-commodity"]
+                if keyword in body_text.lower()
+            }
+        )
+        sections.append(
+            {
+                **start,
+                "page_end": next_page - 1,
+                "heading_path": " > ".join(
+                    part
+                    for part in [
+                        f"Part {start['part_number']}" if start["part_number"] is not None else None,
+                        start["part_title"],
+                        f"Chapter {start['chapter_number']}",
+                        start["chapter_title"],
+                    ]
+                    if part
+                ),
+                "body_text": body_text,
+                "summary_text": summary_text,
+                "keywords": keywords,
+            }
+        )
+
+    raw_text = "\n\n".join(page["text"] for page in pages if page["text"])
+    return {
+        "title": "Trading Commodity Spreads",
+        "page_count": len(reader.pages),
+        "raw_text": raw_text,
+        "sections": sections,
+    }
+
+
+def _build_strategy_document_summary(extracted: dict[str, Any]) -> str:
+    chapter_count = len(extracted["sections"])
+    return (
+        f"Strategy manual with {chapter_count} extracted chapters covering foundations, trade quality, "
+        f"trade selection, execution, margin, stops, profit taking, framework hierarchy, and appendices."
+    )
+
+
+def _serialize_strategy_document(document: StrategyDocument) -> dict[str, Any]:
+    return {
+        "id": document.id,
+        "title": document.title,
+        "source_file": document.source_file,
+        "document_type": document.document_type,
+        "author": document.author,
+        "version_label": document.version_label,
+        "published_year": document.published_year,
+        "page_count": document.page_count,
+        "summary_text": document.summary_text,
+        "metadata": document.metadata_json,
+    }
+
+
+def _serialize_strategy_section(section: StrategySection) -> dict[str, Any]:
+    return {
+        "id": section.id,
+        "part_number": section.part_number,
+        "part_title": section.part_title,
+        "chapter_number": section.chapter_number,
+        "chapter_title": section.chapter_title,
+        "page_start": section.page_start,
+        "page_end": section.page_end,
+        "heading_path": section.heading_path,
+        "summary_text": section.summary_text,
+        "keywords": section.keywords_json,
+    }
+
+
+def _serialize_strategy_principle(principle: StrategyPrinciple) -> dict[str, Any]:
+    return {
+        "id": principle.id,
+        "principle_key": principle.principle_key,
+        "principle_title": principle.principle_title,
+        "category": principle.category,
+        "priority": principle.priority,
+        "summary_text": principle.summary_text,
+        "guidance_text": principle.guidance_text,
+        "applies_to": principle.applies_to_json,
+        "examples": principle.examples_json,
+        "anti_patterns": principle.anti_patterns_json,
+        "chapter_number": principle.metadata_json.get("chapter_number"),
+        "chapter_title": principle.metadata_json.get("chapter_title"),
+    }
 
 
 def _parse_contract_code(contract_code: str) -> dict[str, str]:
@@ -1940,6 +2190,170 @@ def list_contract_month_codes() -> dict[str, Any]:
                 }
                 for row in rows
             ],
+        }
+
+
+@mcp.tool()
+def import_strategy_manual(pdf_path: str | None = None) -> dict[str, Any]:
+    """Import the Smart Spreads strategy manual into the doctrine knowledge tables."""
+    source_path = Path(pdf_path) if pdf_path else DEFAULT_STRATEGY_MANUAL_PATH
+    if not source_path.exists():
+        raise ValueError(f"Strategy manual PDF not found at {source_path}")
+
+    extracted = _extract_strategy_pdf(source_path)
+    if not extracted["sections"]:
+        raise ValueError(f"No strategy chapters were extracted from {source_path}")
+
+    file_hash = _sha256_file(source_path)
+    source_modified_at = datetime.fromtimestamp(source_path.stat().st_mtime, tz=UTC)
+    summary_text = _build_strategy_document_summary(extracted)
+    metadata = {
+        "page_count": extracted["page_count"],
+        "chapter_count": len(extracted["sections"]),
+        "source_modified_at": source_modified_at.isoformat(),
+    }
+
+    with database.session() as session:
+        document = session.execute(
+            select(StrategyDocument).where(StrategyDocument.source_file == str(source_path))
+        ).scalar_one_or_none()
+        if document is None:
+            document = StrategyDocument(
+                title=extracted["title"],
+                source_file=str(source_path),
+                file_hash=file_hash,
+                document_type="strategy_manual",
+                author="Darren Carl",
+                version_label="Smart Spreads Strategy",
+                published_year=2014,
+                page_count=extracted["page_count"],
+                raw_text=extracted["raw_text"],
+                summary_text=summary_text,
+                metadata_json=metadata,
+            )
+            session.add(document)
+            session.flush()
+            status = "imported"
+        else:
+            document.title = extracted["title"]
+            document.file_hash = file_hash
+            document.document_type = "strategy_manual"
+            document.author = "Darren Carl"
+            document.version_label = "Smart Spreads Strategy"
+            document.published_year = 2014
+            document.page_count = extracted["page_count"]
+            document.raw_text = extracted["raw_text"]
+            document.summary_text = summary_text
+            document.metadata_json = metadata
+            document.sections.clear()
+            document.principles.clear()
+            session.flush()
+            status = "updated"
+
+        section_by_chapter: dict[int, StrategySection] = {}
+        for section in extracted["sections"]:
+            record = StrategySection(
+                strategy_document=document,
+                part_number=section["part_number"],
+                part_title=section["part_title"],
+                chapter_number=section["chapter_number"],
+                chapter_title=section["chapter_title"],
+                section_label=f"Chapter {section['chapter_number']}",
+                page_start=section["page_start"],
+                page_end=section["page_end"],
+                heading_path=section["heading_path"],
+                body_text=section["body_text"],
+                summary_text=section["summary_text"],
+                keywords_json=section["keywords"],
+                metadata_json={},
+            )
+            session.add(record)
+            if section["chapter_number"] is not None:
+                section_by_chapter[section["chapter_number"]] = record
+
+        for principle in STRATEGY_PRINCIPLE_SEED:
+            chapter_number = principle["chapter_number"]
+            section = section_by_chapter.get(chapter_number)
+            session.add(
+                StrategyPrinciple(
+                    strategy_document=document,
+                    strategy_section=section,
+                    principle_key=principle["principle_key"],
+                    principle_title=principle["principle_title"],
+                    category=principle["category"],
+                    priority=principle["priority"],
+                    summary_text=principle["summary_text"],
+                    guidance_text=principle["guidance_text"],
+                    applies_to_json=principle["applies_to"],
+                    examples_json=principle.get("examples", []),
+                    anti_patterns_json=principle["anti_patterns"],
+                    metadata_json={
+                        "chapter_number": chapter_number,
+                        "chapter_title": section.chapter_title if section is not None else None,
+                    },
+                )
+            )
+
+        session.flush()
+        section_count = session.execute(
+            select(StrategySection).where(StrategySection.strategy_document_id == document.id)
+        ).scalars().all()
+        principle_count = session.execute(
+            select(StrategyPrinciple).where(StrategyPrinciple.strategy_document_id == document.id)
+        ).scalars().all()
+
+        return {
+            "status": status,
+            "document": _serialize_strategy_document(document),
+            "section_count": len(section_count),
+            "principle_count": len(principle_count),
+        }
+
+
+@mcp.tool()
+def list_strategy_documents() -> dict[str, Any]:
+    """List imported strategy/doctrine documents."""
+    with database.session() as session:
+        rows = session.execute(
+            select(StrategyDocument).order_by(desc(StrategyDocument.updated_at))
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [_serialize_strategy_document(row) for row in rows],
+        }
+
+
+@mcp.tool()
+def list_strategy_sections(limit: int = 25, chapter_number: int | None = None) -> dict[str, Any]:
+    """List extracted strategy manual chapters/sections."""
+    with database.session() as session:
+        stmt = select(StrategySection).order_by(
+            StrategySection.chapter_number.asc(),
+            StrategySection.page_start.asc(),
+        )
+        if chapter_number is not None:
+            stmt = stmt.where(StrategySection.chapter_number == chapter_number)
+        rows = session.execute(stmt.limit(limit)).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [_serialize_strategy_section(row) for row in rows],
+        }
+
+
+@mcp.tool()
+def list_strategy_principles(category: str | None = None) -> dict[str, Any]:
+    """List normalized strategy principles derived from the Smart Spreads strategy manual."""
+    with database.session() as session:
+        stmt = select(StrategyPrinciple).order_by(
+            StrategyPrinciple.priority.asc(),
+            StrategyPrinciple.principle_key.asc(),
+        )
+        if category:
+            stmt = stmt.where(StrategyPrinciple.category == category)
+        rows = session.execute(stmt).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [_serialize_strategy_principle(row) for row in rows],
         }
 
 

@@ -369,6 +369,111 @@ class ContractMonthCode(Base):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
 
+class StrategyDocument(Base):
+    __tablename__ = "strategy_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_file: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+    sections: Mapped[list["StrategySection"]] = relationship(
+        back_populates="strategy_document",
+        cascade="all, delete-orphan",
+    )
+    principles: Mapped[list["StrategyPrinciple"]] = relationship(
+        back_populates="strategy_document",
+        cascade="all, delete-orphan",
+    )
+
+
+class StrategySection(Base):
+    __tablename__ = "strategy_sections"
+    __table_args__ = (
+        UniqueConstraint("strategy_document_id", "chapter_number", name="uq_strategy_document_chapter"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_document_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    part_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    part_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chapter_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chapter_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    section_label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    heading_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keywords_json: Mapped[list] = mapped_column("keywords", JSON, nullable=False, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+    strategy_document: Mapped["StrategyDocument"] = relationship(back_populates="sections")
+    principles: Mapped[list["StrategyPrinciple"]] = relationship(back_populates="strategy_section")
+
+
+class StrategyPrinciple(Base):
+    __tablename__ = "strategy_principles"
+    __table_args__ = (
+        UniqueConstraint("strategy_document_id", "principle_key", name="uq_strategy_document_principle"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_document_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategy_sections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    principle_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    principle_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    guidance_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applies_to_json: Mapped[list] = mapped_column("applies_to", JSON, nullable=False, default=list)
+    examples_json: Mapped[list] = mapped_column("examples", JSON, nullable=False, default=list)
+    anti_patterns_json: Mapped[list] = mapped_column("anti_patterns", JSON, nullable=False, default=list)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+    strategy_document: Mapped["StrategyDocument"] = relationship(back_populates="principles")
+    strategy_section: Mapped["StrategySection | None"] = relationship(back_populates="principles")
+
+
 class Database:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -389,6 +494,9 @@ class Database:
         self._ensure_schwab_futures_catalog_columns()
         self._ensure_newsletter_commodity_catalog_columns()
         self._ensure_contract_month_codes_columns()
+        self._ensure_strategy_documents_columns()
+        self._ensure_strategy_sections_columns()
+        self._ensure_strategy_principles_columns()
 
     def _ensure_newsletters_phase1_columns(self) -> None:
         self._add_column_if_missing("newsletters", "issue_code", self._column_sql("text"))
@@ -567,6 +675,90 @@ class Database:
             self._column_sql("json", nullable=False, default="'{}'"),
         )
 
+    def _ensure_strategy_documents_columns(self) -> None:
+        self._add_column_if_missing("strategy_documents", "title", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "source_file", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "file_hash", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "document_type", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "author", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "version_label", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "published_year", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_documents", "page_count", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_documents", "raw_text", self._column_sql("text"))
+        self._add_column_if_missing("strategy_documents", "summary_text", self._column_sql("text"))
+        self._add_column_if_missing(
+            "strategy_documents",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+        self._add_column_if_missing(
+            "strategy_documents",
+            "created_at",
+            self._column_sql("datetime"),
+        )
+        self._add_column_if_missing(
+            "strategy_documents",
+            "updated_at",
+            self._column_sql("datetime"),
+        )
+
+    def _ensure_strategy_sections_columns(self) -> None:
+        self._add_column_if_missing("strategy_sections", "strategy_document_id", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_sections", "part_number", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_sections", "part_title", self._column_sql("text"))
+        self._add_column_if_missing("strategy_sections", "chapter_number", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_sections", "chapter_title", self._column_sql("text"))
+        self._add_column_if_missing("strategy_sections", "section_label", self._column_sql("text"))
+        self._add_column_if_missing("strategy_sections", "page_start", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_sections", "page_end", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_sections", "heading_path", self._column_sql("text"))
+        self._add_column_if_missing("strategy_sections", "body_text", self._column_sql("text"))
+        self._add_column_if_missing("strategy_sections", "summary_text", self._column_sql("text"))
+        self._add_column_if_missing(
+            "strategy_sections",
+            "keywords",
+            self._column_sql("json", nullable=False, default="'[]'"),
+        )
+        self._add_column_if_missing(
+            "strategy_sections",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+        self._add_column_if_missing("strategy_sections", "created_at", self._column_sql("datetime"))
+        self._add_column_if_missing("strategy_sections", "updated_at", self._column_sql("datetime"))
+
+    def _ensure_strategy_principles_columns(self) -> None:
+        self._add_column_if_missing("strategy_principles", "strategy_document_id", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_principles", "strategy_section_id", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_principles", "principle_key", self._column_sql("text"))
+        self._add_column_if_missing("strategy_principles", "principle_title", self._column_sql("text"))
+        self._add_column_if_missing("strategy_principles", "category", self._column_sql("text"))
+        self._add_column_if_missing("strategy_principles", "priority", self._column_sql("integer"))
+        self._add_column_if_missing("strategy_principles", "summary_text", self._column_sql("text"))
+        self._add_column_if_missing("strategy_principles", "guidance_text", self._column_sql("text"))
+        self._add_column_if_missing(
+            "strategy_principles",
+            "applies_to",
+            self._column_sql("json", nullable=False, default="'[]'"),
+        )
+        self._add_column_if_missing(
+            "strategy_principles",
+            "examples",
+            self._column_sql("json", nullable=False, default="'[]'"),
+        )
+        self._add_column_if_missing(
+            "strategy_principles",
+            "anti_patterns",
+            self._column_sql("json", nullable=False, default="'[]'"),
+        )
+        self._add_column_if_missing(
+            "strategy_principles",
+            "metadata",
+            self._column_sql("json", nullable=False, default="'{}'"),
+        )
+        self._add_column_if_missing("strategy_principles", "created_at", self._column_sql("datetime"))
+        self._add_column_if_missing("strategy_principles", "updated_at", self._column_sql("datetime"))
+
     def _create_phase1_indexes(self) -> None:
         index_statements = [
             "create index if not exists idx_newsletters_issue_status on newsletters (issue_status)",
@@ -589,6 +781,12 @@ class Database:
             "create index if not exists idx_newsletter_commodity_catalog_broker_root on newsletter_commodity_catalog (broker_symbol_root)",
             "create index if not exists idx_newsletter_commodity_catalog_preferred_root on newsletter_commodity_catalog (preferred_schwab_root)",
             "create unique index if not exists idx_contract_month_codes_code on contract_month_codes (month_code)",
+            "create unique index if not exists idx_strategy_documents_source_file on strategy_documents (source_file)",
+            "create unique index if not exists idx_strategy_documents_file_hash on strategy_documents (file_hash)",
+            "create index if not exists idx_strategy_sections_document_id on strategy_sections (strategy_document_id)",
+            "create index if not exists idx_strategy_sections_chapter_number on strategy_sections (chapter_number)",
+            "create unique index if not exists idx_strategy_principles_document_key on strategy_principles (strategy_document_id, principle_key)",
+            "create index if not exists idx_strategy_principles_category on strategy_principles (category)",
         ]
         with self.engine.begin() as connection:
             for statement in index_statements:
