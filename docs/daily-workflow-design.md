@@ -313,6 +313,88 @@ Identify the exact Schwab MCP tools needed for:
 - current P/L
 - stream status
 
+## MCP tool map
+
+The Daily workflow should use a small, explicit tool set rather than treating both MCPs as open-ended.
+
+### Schwab MCP core Daily tools
+
+These are the main operational tools from `schwab-smartspreads-file`:
+
+- `get_stream_status`
+  - use first as a health check before trusting streaming data
+  - confirms connection state, subscribed symbols, and cache freshness
+
+- `get_futures_positions`
+  - source of truth for imported current futures legs from the canonical TOS CSV
+  - use to confirm what is currently open
+
+- `get_watchlist_quotes`
+  - prices the full current published watchlist in one call
+  - preferred tool for Daily live watchlist monitoring
+
+- `get_spread_value_live`
+  - use when a specific spread needs to be recalculated from cached leg marks
+  - useful for targeted follow-up on one position or one candidate trade
+
+- `get_live_quote`
+  - use for targeted single-leg confirmation when a leg needs closer inspection
+
+### Schwab MCP optional supporting tools
+
+- `get_recent_bars`
+  - use only when short-term recent price context is needed
+
+- `get_market_hours`
+  - optional market-open confirmation
+
+- `get_account_summary`
+  - optional portfolio-level account context
+
+- `get_trade_history`
+  - optional reference for prior realized futures entries already imported
+
+- `import_tos_pnl`
+  - not part of the standard Daily morning run
+  - use when closed-position P/L needs to be imported into Schwab-side history
+
+### Newsletter MCP core Daily tools
+
+These are the main weekly-intelligence tools from `newsletter-mcp`:
+
+- `get_issue_summary`
+  - primary Daily intelligence tool
+  - returns the issue brief, issue delta, and watchlist reference in one response
+
+- `get_watchlist`
+  - use when row-level current-week watchlist details are needed
+  - especially useful for explicit alignment or conflict checks
+
+- `get_watchlist_reference`
+  - use when the Daily workflow needs the full trading rules and interpretation block separately
+
+### Newsletter MCP optional supporting tools
+
+- `list_issues`
+  - optional sanity check if the current published week is unclear
+
+- `refresh_and_publish_issue`
+  - not a standard Daily tool
+  - use only when the weekly publication is stale or needs to be rebuilt before the Daily run
+
+## Recommended tool sequence
+
+For a standard Daily run, the preferred order is:
+
+1. `schwab-smartspreads-file.get_stream_status`
+2. `schwab-smartspreads-file.get_futures_positions`
+3. `schwab-smartspreads-file.get_watchlist_quotes`
+4. `newsletter-mcp.get_issue_summary`
+5. `newsletter-mcp.get_watchlist` only if row-level alignment detail is needed
+6. targeted follow-up with `get_spread_value_live`, `get_live_quote`, or `get_recent_bars` only when necessary
+
+This keeps the Daily flow simple and avoids over-calling tools during normal review.
+
 ### Step 3
 
 Design a reusable Daily prompt that:
@@ -324,3 +406,57 @@ Design a reusable Daily prompt that:
 ### Step 4
 
 Only after the workflow is trusted, decide what daily artifacts should be persisted in Phase 2.
+
+## Reusable Daily prompt contract
+
+The Daily prompt should be explicit about:
+- file freshness already being checked
+- Schwab MCP as the operational engine
+- Newsletter MCP as the weekly intelligence layer
+- the need for a compact final markdown report plus action plan
+
+### Recommended Daily operator prompt
+
+```text
+Use schwab-smartspreads-file first and newsletter-mcp second.
+
+Assume the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area were both updated for the current run.
+
+From schwab-smartspreads-file:
+- confirm stream health
+- import current futures positions
+- price current open positions
+- price the current published watchlist
+
+From newsletter-mcp:
+- get the current issue summary
+- use the stored issue brief, watchlist rules, issue delta, and newsletter-aligned exit dates
+
+Then produce today's daily markdown report and action plan. Include:
+- run status
+- live watchlist values
+- imported open positions
+- open-position spread values and current P/L
+- exit schedule with due today and due soon
+- watchlist alignment and conflicts
+- weekly intelligence context
+- portfolio summary
+- top 3 actions for today
+
+Keep the answer concise and operational. Do not restate raw JSON.
+```
+
+### Follow-up prompt for deeper inspection
+
+```text
+Using the same Daily context, focus only on positions or watchlist ideas that need attention today. Explain why they matter now, what rule or exit date is driving urgency, and what I should review first.
+```
+
+### When to escalate beyond the standard prompt
+
+Escalate to targeted tool calls only if:
+- stream health is weak
+- one position looks mismatched or missing
+- one spread needs a targeted recalculation
+- recent price action is needed to explain a move
+- the current published week is unclear
