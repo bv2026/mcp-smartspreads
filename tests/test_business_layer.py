@@ -148,8 +148,13 @@ class IssueBriefServiceTests(unittest.TestCase):
 
         self.assertEqual(brief.watchlist_summary["entry_count"], 2)
         self.assertEqual(brief.watchlist_summary["category_counts"]["Grain"], 1)
+        self.assertEqual(brief.watchlist_summary["volatility_counts"]["High"], 2)
+        self.assertEqual(brief.watchlist_summary["dominant_category"]["label"], "Grain")
+        self.assertEqual(brief.watchlist_summary["dominant_volatility"]["label"], "High")
+        self.assertTrue(brief.watchlist_summary["blocked_examples"])
         self.assertEqual(brief.change_summary["added_count"], 1)
         self.assertTrue(brief.key_themes)
+        self.assertTrue(any("volatility" in theme.lower() for theme in brief.key_themes))
         self.assertTrue(any("blocked" in risk.lower() for risk in brief.notable_risks))
         self.assertTrue(brief.notable_opportunities)
 
@@ -171,8 +176,34 @@ class IssueBriefServiceTests(unittest.TestCase):
             brief = session.execute(select(IssueBrief)).scalar_one()
             self.assertEqual(brief.watchlist_summary_json["entry_count"], 2)
             self.assertIn("category_counts", brief.watchlist_summary_json)
+            self.assertIn("volatility_counts", brief.watchlist_summary_json)
+            self.assertIn("dominant_category", brief.watchlist_summary_json)
             self.assertTrue(brief.key_themes_json)
             self.assertTrue(brief.notable_opportunities_json)
+
+    def test_get_issue_summary_returns_stored_business_layer_fields(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base_dir = Path(temp_dir.name)
+        database = Database(f"sqlite:///{(base_dir / 'issue-summary.db').as_posix()}")
+        database.create_schema()
+        self.addCleanup(database.engine.dispose)
+        database_patch = mock.patch.object(server, "database", database)
+        database_patch.start()
+        self.addCleanup(database_patch.stop)
+
+        parsed = _make_parsed_newsletter(base_dir)
+        server._save_parsed_newsletter(parsed)
+
+        summary = server.get_issue_summary("2026-04-10")
+
+        self.assertEqual(summary["week_ended"], "2026-04-10")
+        self.assertIn("issue_brief", summary)
+        self.assertIn("key_themes", summary["issue_brief"])
+        self.assertIn("watchlist_summary", summary["issue_brief"])
+        self.assertIn("volatility_counts", summary["issue_brief"]["watchlist_summary"])
+        self.assertIn("issue_delta", summary)
+        self.assertIn("watchlist_reference", summary)
 
 
 if __name__ == "__main__":

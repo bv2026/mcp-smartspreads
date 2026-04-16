@@ -7,6 +7,40 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
+class WatchlistSummaryDraft:
+    entry_count: int
+    section_counts: dict[str, int]
+    classification_counts: dict[str, int]
+    category_counts: dict[str, int]
+    volatility_counts: dict[str, int]
+    tradeable_count: int
+    blocked_count: int
+    dominant_category: dict[str, Any] | None
+    dominant_classification: dict[str, Any] | None
+    dominant_volatility: dict[str, Any] | None
+    top_categories: list[dict[str, Any]]
+    top_classifications: list[dict[str, Any]]
+    blocked_examples: list[dict[str, Any]]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "entry_count": self.entry_count,
+            "section_counts": self.section_counts,
+            "classification_counts": self.classification_counts,
+            "category_counts": self.category_counts,
+            "volatility_counts": self.volatility_counts,
+            "tradeable_count": self.tradeable_count,
+            "blocked_count": self.blocked_count,
+            "dominant_category": self.dominant_category,
+            "dominant_classification": self.dominant_classification,
+            "dominant_volatility": self.dominant_volatility,
+            "top_categories": self.top_categories,
+            "top_classifications": self.top_classifications,
+            "blocked_examples": self.blocked_examples,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class IssueBriefDraft:
     headline: str
     executive_summary: str
@@ -22,11 +56,18 @@ class IssueBriefService:
 
     @staticmethod
     def summarize_watchlist_rows(rows: list[Any]) -> dict[str, Any]:
+        return IssueBriefService.build_watchlist_summary(rows).as_dict()
+
+    @staticmethod
+    def build_watchlist_summary(rows: list[Any]) -> WatchlistSummaryDraft:
         section_counts = Counter(row.section_name for row in rows)
         classification_counts = Counter(
             row.trade_quality or row.portfolio or "unclassified" for row in rows
         )
         category_counts = Counter(row.category for row in rows)
+        volatility_counts = Counter(
+            getattr(row, "volatility_structure", None) or "unclassified" for row in rows
+        )
         tradeable_count = sum(
             1
             for row in rows
@@ -37,14 +78,43 @@ class IssueBriefService:
             for row in rows
             if getattr(row, "tradeable", None) is False
         )
-        return {
-            "entry_count": len(rows),
-            "section_counts": dict(section_counts),
-            "classification_counts": dict(classification_counts),
-            "category_counts": dict(category_counts),
-            "tradeable_count": tradeable_count,
-            "blocked_count": blocked_count,
-        }
+        blocked_examples = [
+            {
+                "commodity_name": row.commodity_name,
+                "spread_code": row.spread_code,
+                "blocked_reason": getattr(row, "blocked_reason", None),
+            }
+            for row in rows
+            if getattr(row, "tradeable", None) is False
+        ][:3]
+
+        def _dominant(counter: Counter) -> dict[str, Any] | None:
+            if not counter:
+                return None
+            label, count = counter.most_common(1)[0]
+            return {"label": label, "count": count}
+
+        def _rank(counter: Counter, *, top_n: int = 3) -> list[dict[str, Any]]:
+            return [
+                {"label": label, "count": count}
+                for label, count in counter.most_common(top_n)
+            ]
+
+        return WatchlistSummaryDraft(
+            entry_count=len(rows),
+            section_counts=dict(section_counts),
+            classification_counts=dict(classification_counts),
+            category_counts=dict(category_counts),
+            volatility_counts=dict(volatility_counts),
+            tradeable_count=tradeable_count,
+            blocked_count=blocked_count,
+            dominant_category=_dominant(category_counts),
+            dominant_classification=_dominant(classification_counts),
+            dominant_volatility=_dominant(volatility_counts),
+            top_categories=_rank(category_counts),
+            top_classifications=_rank(classification_counts),
+            blocked_examples=blocked_examples,
+        )
 
     @staticmethod
     def build_issue_brief(
@@ -55,7 +125,7 @@ class IssueBriefService:
         delta: Any | None = None,
         reference: Any | None = None,
     ) -> IssueBriefDraft:
-        watchlist_summary = IssueBriefService.summarize_watchlist_rows(entries)
+        watchlist_summary = IssueBriefService.build_watchlist_summary(entries).as_dict()
         change_summary = IssueBriefService._build_change_summary(delta)
         return IssueBriefDraft(
             headline=title,
@@ -158,21 +228,26 @@ class IssueBriefService:
     @staticmethod
     def _build_key_themes(entries: list[Any], watchlist_summary: dict[str, Any]) -> list[str]:
         themes: list[str] = []
-        category_counts = Counter(row.category for row in entries)
-        if category_counts:
-            top_category, top_count = category_counts.most_common(1)[0]
-            themes.append(f"{top_category} leads the weekly watchlist with {top_count} setups.")
+        dominant_category = watchlist_summary.get("dominant_category")
+        if dominant_category:
+            themes.append(
+                f"{dominant_category['label']} is the lead market concentration with {dominant_category['count']} setups."
+            )
         section_counts = watchlist_summary.get("section_counts", {})
         if section_counts:
             themes.append(
                 f"Intra/inter mix: {json.dumps(section_counts, sort_keys=True)}."
             )
-        strongest = Counter(
-            row.trade_quality or row.portfolio or "unclassified" for row in entries
-        )
-        if strongest:
-            label, count = strongest.most_common(1)[0]
-            themes.append(f"{label} is the dominant scoring bucket with {count} entries.")
+        dominant_classification = watchlist_summary.get("dominant_classification")
+        if dominant_classification:
+            themes.append(
+                f"{dominant_classification['label']} is the dominant scoring bucket with {dominant_classification['count']} entries."
+            )
+        dominant_volatility = watchlist_summary.get("dominant_volatility")
+        if dominant_volatility:
+            themes.append(
+                f"{dominant_volatility['label']} volatility structures lead the book with {dominant_volatility['count']} setups."
+            )
         return themes[:5]
 
     @staticmethod

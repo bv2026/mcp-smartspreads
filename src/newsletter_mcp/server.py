@@ -867,10 +867,44 @@ def get_issue_summary(week_ended: str) -> dict[str, Any]:
             .order_by(NewsletterSection.page_start)
         )
         sections = session.execute(sections_stmt).scalars().all()
+        brief = session.execute(
+            select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
+        ).scalar_one_or_none()
+        delta = session.execute(
+            select(IssueDelta).where(IssueDelta.newsletter_id == newsletter.id)
+        ).scalar_one_or_none()
+        reference = session.execute(
+            select(WatchlistReferenceRecord).where(
+                WatchlistReferenceRecord.newsletter_id == newsletter.id
+            )
+        ).scalar_one_or_none()
+        entries = session.execute(
+            select(WatchlistEntry)
+            .where(WatchlistEntry.newsletter_id == newsletter.id)
+            .order_by(WatchlistEntry.page_number, WatchlistEntry.id)
+        ).scalars().all()
+        brief_data = _issue_brief_fallback(newsletter, entries, delta, reference, brief)
+
         return {
             "week_ended": newsletter.week_ended.isoformat(),
             "title": newsletter.title,
             "summary": newsletter.overall_summary,
+            "issue_brief": {
+                "headline": brief_data.headline,
+                "executive_summary": brief_data.executive_summary,
+                "key_themes": brief_data.key_themes,
+                "notable_risks": brief_data.notable_risks,
+                "notable_opportunities": brief_data.notable_opportunities,
+                "watchlist_summary": brief_data.watchlist_summary,
+                "change_summary": brief_data.change_summary,
+            },
+            "issue_delta": {
+                "summary_text": delta.summary_text if delta is not None else None,
+                "added_entries": delta.added_entries_json if delta is not None else [],
+                "removed_entries": delta.removed_entries_json if delta is not None else [],
+                "changed_entries": delta.changed_entries_json if delta is not None else [],
+            },
+            "watchlist_reference": _serialize_watchlist_reference(reference),
             "sections": [
                 {
                     "name": section.name,
