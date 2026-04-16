@@ -141,10 +141,10 @@ Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the 
 - the current published newsletter week
 - today's live futures/watchlist context
 - my imported current futures positions
-- newsletter-aligned exit dates for open positions
+- newsletter-history-backed exit dates for open positions
 - the highest-priority actions for today
 
-Use newsletter-mcp for weekly intelligence, rules, and exit interpretation. Use schwab-smartspreads-file for imported positions, live watchlist pricing, live spread pricing, and stream status.
+Use newsletter-mcp for weekly intelligence, rules, and exit interpretation. Use newsletter history for legacy-carryover positions if the spread is not in the current issue. Use schwab-smartspreads-file for imported positions, live watchlist pricing, live spread pricing, and stream status.
 ```
 
 ### Daily action plan
@@ -155,6 +155,7 @@ Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the 
 - watchlist ideas that are currently actionable
 - exits due soon or due today
 - conflicts between current positions and the newsletter watchlist
+- legacy-carryover positions whose exit dates come from older newsletters
 - the top 3 actions I should consider today
 ```
 
@@ -167,7 +168,19 @@ Use schwab-smartspreads-file first and newsletter-mcp second. Price the current 
 ### Daily position review
 
 ```text
-Use schwab-smartspreads-file and compare imported current futures positions against the current published newsletter watchlist. Then use newsletter-mcp to explain whether each position is aligned with this week’s intra/inter ideas, rules, and exit dates.
+Use schwab-smartspreads-file and compare imported current futures positions against the current published newsletter watchlist. Then use newsletter-mcp to explain whether each position is aligned with this week's intra/inter ideas, rules, and exit dates. If a position is not in the current issue, search newsletter history for a legacy-carryover match before marking its exit as unknown.
+```
+
+### Daily exit schedule check
+
+```text
+Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Build today's exit schedule from newsletter history, including:
+- current-week exact matches
+- legacy-carryover matches from older newsletters
+- quantity-aware butterfly matches
+- urgency buckets
+
+Call out any positions that still have no newsletter-history match. Also note any valid symbols that are manual-leg-only or known no-tick cases.
 ```
 
 ### Daily comparison against live workflow
@@ -183,6 +196,9 @@ Use schwab-smartspreads-live and schwab-smartspreads-file. Compare the original 
 - Ask for reference metadata when downstream interpretation is important.
 - Ask for consolidated exports when you want one CSV spanning multiple issues.
 - For Sunday work, start with `newsletter-mcp` and treat it as the source of truth for ingestion, publication, and weekly intelligence.
-- For Daily work, use `schwab-smartspreads-file` for live file-based monitoring and `newsletter-mcp` for interpretation, rules, and week-level context.
+- For Daily work, use `schwab-smartspreads-file` for live file-based monitoring and `newsletter-mcp` for interpretation, rules, week-level context, and newsletter-history-backed exit matching.
 - Use `schwab-smartspreads-live` only when you explicitly want to compare the legacy/live workflow against the file-based Phase 1 workflow.
-
+- When Daily output includes VIX-family or other no-tick/manual-leg symbols, ask Claude to distinguish between:
+  - valid symbol but manual-leg-only workflow
+  - valid symbol but no-tick stream condition
+  - actually blocked / not tradeable symbols

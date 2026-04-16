@@ -177,15 +177,26 @@ Recommended Daily sequence:
    - current published watchlist legs/spreads
 5. `newsletter-mcp`
    Pull the current week's intelligence, watchlist reference rules, issue summary, and newsletter-aligned exit dates.
+   This now includes:
+   - current-issue matches where the open spread is still in the latest watchlist
+   - legacy-carryover matches from older newsletters when the spread is no longer in the current issue
+   - quantity-aware matching for butterfly structures
 6. Claude combines both sources into:
    - morning brief
    - action plan
    - alignment check between current positions and weekly watchlist
    - exit-date urgency for open positions
 
+Known Daily limitations:
+
+- Some valid symbols may still have no ticks from Schwab streaming in this workflow.
+- VIX-family contracts are valid but are treated as manual-leg workflow items, not native spread entries.
+- `/MWE` currently remains a known no-tick / unsupported operational case.
+- If a position truly has no newsletter-history match, its exit date will remain `Unknown` until a manual fallback is introduced.
+
 Suggested Daily ask:
 
 ```text
-Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-aligned exit dates, and the rules that matter for interpreting today's setups.
+Use newsletter-mcp and schwab-smartspreads-file. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-history-backed exit dates, and the rules that matter for interpreting today's setups. Treat valid-but-manual-leg symbols separately from normal native spread entries.
 ```
 
