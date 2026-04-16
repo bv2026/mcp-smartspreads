@@ -115,6 +115,23 @@ The architecture is explicitly not:
 - lets Schwab MCP continue to operate with simple published inputs
 - creates a clean audit trail
 
+### Phase 1 completion status
+
+Phase 1 is now functionally complete.
+
+Completed outcomes:
+- newsletter issues, watchlists, references, briefs, deltas, parser runs, and publication history are persisted in the newsletter DB
+- business-layer issue summaries are stored and queryable
+- approved weekly artifacts are published into the `published/` contract
+- the file-based Schwab MCP consumes the published watchlist contract successfully
+- one-shot refresh and republish is available through `refresh_and_publish_issue(...)`
+- unit, integration, publication, and handoff E2E tests are in place and passing
+
+What remains after Phase 1 is mainly polish:
+- response ergonomics in the UI
+- additional business-layer depth for daily workflow intelligence
+- later cross-system learning in Phase 2
+
 ## Phase 2
 
 ### Model

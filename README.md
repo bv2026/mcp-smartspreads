@@ -2,6 +2,8 @@
 
 This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder, stores complete watchlist rows in a database, stores lighter summaries for the rest of the issue, and exposes that data through an MCP server.
 
+Current milestone: Phase 1 is complete. The project now has persistent newsletter intelligence, published file-based handoff to the file-based Schwab MCP, and a tested refresh/publish workflow.
+
 ## Project Docs
 
 - [`DESIGN.md`](./DESIGN.md) for architecture and schema decisions

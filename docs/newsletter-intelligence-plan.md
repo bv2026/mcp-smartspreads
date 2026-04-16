@@ -161,6 +161,21 @@ The publication contract is documented in [`publication-contract.md`](./publicat
 - weekly intelligence is queryable later
 - published outputs are generated from DB
 - Schwab MCP can continue using approved weekly files
+- one-shot refresh and republish is available for issue maintenance
+
+### Phase 1 current status
+
+Phase 1 is complete.
+
+Implemented in Phase 1:
+- persistent newsletter intelligence DB
+- business-layer issue briefs and deltas
+- published contract files
+- file-based Schwab MCP handoff
+- local testing harnesses
+- end-to-end handoff validation
+
+Phase 1 is complete enough to move into Daily workflow and Phase 2 design work.
 
 ### Phase 2 success
 
