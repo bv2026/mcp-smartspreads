@@ -154,11 +154,25 @@ Recommended Sunday sequence:
 3. `newsletter-mcp`
    Run `publish_issue(...)` for the approved week.
    Phase 3 note:
-   the published contract now includes `principle_context` at the top level and per-entry principle fields such as `principle_scores`, `principle_status`, `decision_summary`, and `deferred_principles`.
+   the published contract now includes `principle_context` at the top level and per-entry principle fields such as `principle_scores`, `principle_status`, `decision_summary`, `deferred_principles`, `principle_influences`, and `intelligence_context`.
 4. `newsletter-mcp`
    Generate any CSV/package exports needed for review.
 5. `schwab-smartspreads-file`
    Verify the file-based Schwab workflow is reading the published watchlist.
+
+Recommended Sunday validation pass before trusting a new week:
+
+1. confirm the issue brief and delta look sane after ingest
+2. publish or refresh-publish the issue
+3. inspect `published/watchlist.yaml` for:
+   - `principle_context.tradeable_entries`
+   - `principle_context.blocked_by_principles`
+   - the top blocked ideas
+   - at least a few non-empty `principle_influences`
+4. run the dry run and check that the report includes:
+   - `Weekly Principle Context`
+   - `Weekly Intelligence Signals Applied`
+   - blocked and deferred sections that match the publication contract
 
 Suggested Sunday ask:
 
@@ -198,6 +212,7 @@ Known Daily limitations:
 - `/MWE` currently remains a known no-tick / unsupported operational case.
 - If a position truly has no newsletter-history match, its exit date will remain `Unknown` until a manual fallback is introduced.
 - Phase 3 principle thresholds are now live in the weekly publication, but they still need ongoing calibration against real historical recurrence and operator judgment.
+- Daily workflow does not yet re-score using Sunday intelligence context. For now, treat Sunday `principle_influences` as review context, not as a full Daily decision engine.
 
 Suggested Daily ask:
 
@@ -217,4 +232,21 @@ Phase 3 coverage now includes:
 
 - `tests/test_principle_evaluation.py`
 - `tests/test_publication_contract.py`
+
+## April 24 Newsletter Checklist
+
+Before the April 24, 2026 newsletter weekend cycle:
+
+1. make sure Claude/Desktop has been restarted if MCP code changed during the week
+2. confirm the latest Phase 3 code is running before ingesting the new PDF
+3. ingest the new issue and review the brief, delta, and watchlist reference before publishing
+4. use `refresh_and_publish_issue(...)` if you want the newest scoring logic and intelligence context applied cleanly
+5. compare the new week's `principle_context` against April 10:
+   - total entries
+   - tradeable count
+   - blocked count
+   - selectivity ratio
+6. spot-check a few entries for non-empty `principle_influences` so you know Weekly Intelligence was actually used
+7. treat unusually low tradeable counts as a calibration warning, not automatically as truth
+8. rerun the dry run after publication and confirm the report matches the contract counts
 

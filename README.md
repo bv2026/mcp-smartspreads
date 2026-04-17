@@ -2,7 +2,7 @@
 
 This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder, stores complete watchlist rows in a database, stores lighter summaries for the rest of the issue, and exposes that data through an MCP server.
 
-Current milestone: Phase 1 and Phase 2 are complete for the currently intended scope. The project now has persistent newsletter intelligence, published file-based handoff to the file-based Schwab MCP, an operational Daily workflow, newsletter-history-backed exit scheduling, and a strategy/doctrine knowledge layer.
+Current milestone: Phase 1 and Phase 2 are complete for the currently intended scope, and Phase 3 is now live in its first integrated form. The project now has persistent newsletter intelligence, published file-based handoff to the file-based Schwab MCP, an operational Daily workflow, newsletter-history-backed exit scheduling, a strategy/doctrine knowledge layer, and Weekly-Intelligence-informed Sunday principle scoring.
 
 ## Project Docs
 
@@ -74,6 +74,12 @@ For this use case, I recommend:
 - Track ingestion provenance and publication lifecycle state
 - Make weekly processing auditable instead of file-only
 
+### `evaluation_runs`, `principle_evaluations`, and `watchlist_decisions`
+
+- Durable Phase 3 audit tables owned by `newsletter-mcp`
+- Store Sunday evaluation runs, per-principle outcomes, and per-entry decision snapshots
+- Preserve the current publication bridge while building toward richer decision history
+
 ## What Gets Imported
 
 ### Fully imported
@@ -118,6 +124,12 @@ Run the current unit and integration tests with:
 
 `python -m unittest discover -s tests`
 
+Phase 3 integration coverage includes:
+
+- Weekly Intelligence influence recording during Sunday scoring
+- publication contract validation for principle-aware fields
+- dry-run compatibility with the published principle context
+
 ## Supabase Setup
 
 1. Create a Supabase project.
@@ -133,6 +145,7 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 - `ingest_pending_newsletters()` ingests every PDF in `data/` that is not already stored
 - `backfill_phase1_intelligence()` seeds parser, brief, delta, and publication records for issues already in the database
 - `publish_issue(week_ended, output_dir=None, publication_version=None, published_by=None)` writes the current issue into the `published/` contract files and records a publication run
+- `refresh_and_publish_issue(week_ended, output_dir=None, publication_version=None, published_by=None)` rebuilds issue intelligence, reruns current scoring logic, and republishes the approved issue
 - `list_issues(limit=10)` returns recently imported issues
 - `get_issue_summary(week_ended)` returns the issue summary and section summaries
 - `get_watchlist(week_ended, min_trade_quality=None, include_reference=True)` returns structured watchlist rows and can include the issue's watchlist reference block for export/report workflows
@@ -151,3 +164,10 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
   - transitional `type + volatility structure`
   - newer `trade quality + volatility structure`
 - If Darren changes the PDF layout materially, we will likely want a second parser path or a PDF table extraction upgrade.
+
+## Current Phase 3 Notes
+
+- Sunday scoring is now influenced by stored Weekly Intelligence context derived from the issue brief, issue delta, and watchlist reference.
+- The current published contract includes `principle_influences` and `intelligence_context` per entry so downstream review can validate why a setup passed, blocked, or deferred.
+- Schwab MCP remains contract-based only in v1. Daily logic should read the published context, not write into Newsletter tables.
+- Threshold calibration is still active work. Before trusting a new week operationally, review the Sunday screening counts and blocked examples after publication.

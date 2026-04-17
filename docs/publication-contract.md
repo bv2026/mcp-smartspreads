@@ -77,6 +77,8 @@ Each watchlist entry includes:
 - `decision_summary`
 - `principle_scores`
 - `principle_status`
+- `principle_influences`
+- `intelligence_context`
 - `deferred_principles`
 - `principle_evaluation_ts`
 - `evaluation_version`
@@ -87,6 +89,8 @@ Key contract rules:
 - `tradeable` and `blocked_reason` expose policy and platform constraints
 - `principle_context` is the issue-level Phase 3 screening rollup
 - per-entry principle fields expose publication-safe summaries, not raw internal reasoning
+- `principle_influences` exposes which Weekly Intelligence or issue-change signals affected scoring
+- `intelligence_context` exposes the compact issue-level context snapshot used during Sunday evaluation
 - `entry_key` is stable across weeks so downstream systems can compare recurring ideas
 
 ### `principle_context`
@@ -100,6 +104,17 @@ Current Phase 3 fields:
 - `deferred_for_daily_review`
 - `selectivity_ratio`
 - `top_violations`
+
+### Current implementation note
+
+The current Phase 3 publisher is still metadata-backed at the publication edge, even though durable evaluation records now also exist in:
+
+- `evaluation_runs`
+- `principle_evaluations`
+- `watchlist_decisions`
+
+This is intentional for now.
+The publication contract remains stable while the durable tables accumulate audit history beside it.
 
 ## `weekly_intelligence.json`
 
@@ -130,6 +145,7 @@ Phase 3 note:
 
 - `weekly_intelligence.json` now carries the published principle rollup under `published_context.principle_context`
 - richer per-entry principle detail continues to live in `watchlist.yaml`
+- Weekly Intelligence now materially affects Sunday scoring and is reflected back into the watchlist contract through `principle_influences` and `intelligence_context`
 
 ## `issue_brief.md`
 
@@ -188,3 +204,4 @@ This allows:
 - explicit approval step before publish
 - publication diff reporting between versions
 - Phase 3 threshold and recurrence calibration based on live dry-run feedback
+- gradual shift from metadata-derived publication fields toward `watchlist_decisions` as the source of truth

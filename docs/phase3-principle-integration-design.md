@@ -38,6 +38,32 @@ The Daily flow then consumes:
 - the approved weekly publication
 - principle context and tradeability decisions from Newsletter MCP
 
+## Current Implementation Status
+
+Current live status in the repo:
+
+- Sunday principle evaluation is running in `newsletter-mcp`
+- durable Phase 3 records exist in:
+  - `evaluation_runs`
+  - `principle_evaluations`
+  - `watchlist_decisions`
+- publication still uses the current metadata-backed bridge so the contract stays stable while durable audit history accumulates
+- Weekly Intelligence now feeds Sunday scoring through structured context built from:
+  - `issue_briefs`
+  - `issue_deltas`
+  - `watchlist_references`
+- per-entry publication fields now include:
+  - `principle_influences`
+  - `intelligence_context`
+- the Daily dry run now exposes a `Weekly Intelligence Signals Applied` section for validation
+
+What is not yet complete:
+
+- Daily does not yet re-score using the Sunday intelligence context
+- overrides are not yet implemented
+- publication has not yet shifted to derive directly from `watchlist_decisions`
+- threshold calibration remains active work
+
 ## Design Goals
 
 - make principle evaluation explicit rather than implicit in prompts
@@ -276,6 +302,16 @@ principle_scores:
 principle_status:
   portfolio_fit_over_isolated_trade_appeal: deferred
   intercommodity_requires_extra_confirmation: not_applicable
+principle_influences:
+  structure_before_conviction:
+    - issue_delta.new_this_week
+  volatility_as_constraint:
+    - weekly_intelligence.volatility_emphasis
+intelligence_context:
+  highlighted_commodities:
+    - soybeans
+  risk_commodities:
+    - soybean oil
 decision_summary: "High-conviction structure with no pre-publication principle failure."
 blocked_guidance: null
 principle_evaluation_ts: "2026-04-16T10:30:00Z"
@@ -288,6 +324,7 @@ Contract rules:
 - avoid publishing full chapter-level doctrine text
 - publish decision summaries, not chain-of-thought
 - preserve versioning so Daily consumers know how to interpret the schema
+- publish influence tags and compact context snapshots, not raw reasoning transcripts
 
 ## Daily Workflow Integration
 
@@ -441,6 +478,7 @@ Add Daily logic for:
 - deferred portfolio-fit resolution
 - principle-aware action notes
 - blocked-idea suppression in operational views
+- reuse of Sunday `principle_influences` and `intelligence_context` as Daily review context without breaking the MCP boundary
 
 ### Phase 3D: Learning loop
 
@@ -468,3 +506,15 @@ This belongs after the first publication contract is stable.
 5. update Daily report generation to consume deferred principle context
 
 This sequence preserves the current system while making Phase 3 incremental and testable.
+
+## Operator Notes For The Next Newsletter Cycle
+
+For the next weekly issue, especially the April 24, 2026 newsletter:
+
+1. treat the Sunday publish as both an operational step and a calibration checkpoint
+2. review `principle_context` counts before trusting the watchlist downstream
+3. spot-check a few entries for non-empty `principle_influences` so you know Weekly Intelligence was actually used
+4. compare blocked ideas against your own judgment rather than assuming the current thresholds are final
+5. rerun the dry run after publication and confirm the report mirrors the published counts and influence tags
+
+If the new issue suddenly collapses to a very low tradeable count, that is a signal to review thresholds and intelligence adjustments before treating the output as final doctrine.
