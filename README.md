@@ -9,6 +9,7 @@ Current milestone: Phase 1 and Phase 2 are complete for the currently intended s
 - [`DESIGN.md`](./DESIGN.md) for architecture and schema decisions
 - [`USAGE.md`](./USAGE.md) for setup, MCP queries, and export workflows
 - [`PROMPTS.md`](./PROMPTS.md) for reusable prompt patterns
+- [`CLAUDE_CHEAT_SHEET.md`](./CLAUDE_CHEAT_SHEET.md) for a short copy-paste guide for Claude workflows
 - [`TEST_PROMPTS.md`](./TEST_PROMPTS.md) for reliable intelligence-testing prompts and prompts to avoid
 - [`PHASED_ARCHITECTURE.md`](./PHASED_ARCHITECTURE.md) for the two-workflow, two-phase system design
 - [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
