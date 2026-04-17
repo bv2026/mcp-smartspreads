@@ -48,6 +48,9 @@ These ideas are still valuable and should remain as policy/rules:
 - SmartSpreads-only scope
 - TOS / Schwab futures-spread context
 - RIDX threshold and tier rules
+- entry/exit timing defaults
+- no-stop/no-target default risk framework with explicit exceptions
+- portfolio margin limits
 - permanently blocked or excluded markets like `/GF`
 - structural volatility concepts
 - no stop-loss / profit-target default framework
@@ -76,6 +79,7 @@ The design goals of that shorter version are:
 - focus on MCP system boundaries
 - define the Sunday vs Daily split
 - preserve the important SmartSpreads trading rules
+- preserve durable business rules from the older instruction set without preserving the manual workflow
 - stop Claude from exposing tool chatter
 - encourage use of the doctrine layer when appropriate
 

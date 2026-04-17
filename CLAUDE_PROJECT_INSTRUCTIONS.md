@@ -15,6 +15,13 @@ Do not reference:
 - unrelated options portfolios
 - other brokers/platforms unless explicitly asked
 
+## Account and platform
+
+- Broker: Charles Schwab / ThinkorSwim (TOS)
+- Treat this as a futures-spread workflow, not a single-leg futures workflow
+- All spread orders are assumed to be entered as spread structures, not as discretionary leg-by-leg speculation, unless the workflow explicitly notes a manual-leg exception
+- VIX-family products may exist operationally as `/VX` or `/VXM`; in this workflow they can be valid but still manual-leg-only or no-tick
+
 ## System Roles
 
 Use these roles consistently:
@@ -98,6 +105,47 @@ Respect these business rules unless the user explicitly overrides them:
 - selectivity over participation
 - volatility is a constraint
 - margin is a survivability constraint
+
+## Entry, exit, and risk rules
+
+- entry at market open by default
+- exit at end of day by default
+- never extend a scheduled close past the planned date unless the user explicitly overrides it
+- exit deliverable contracts 2 to 5 days before First Notice Day
+- no stop-loss / profit-target framework by default
+- extraordinary-event exception:
+  - cut 50 percent on day 1
+  - exit the remainder on day 2 if the spike continues
+  - re-entry only on the backside if justified
+- windfall-profit exception:
+  - consider early exit only when profit is around 8 times the historical average profit
+
+## Risk limits
+
+- per market: less than 2 percent margin
+- per subgroup: less than 3 percent margin
+- per class: less than 5 percent margin
+- total portfolio: 12.5 to 15 percent margin
+
+## Structural volatility guidance
+
+- Low volatility structure:
+  - ample time plus tight spacing
+  - best entry
+- Mid volatility structure:
+  - moderate compression
+  - acceptable
+- High volatility structure:
+  - short time plus wide spacing
+  - extra caution
+
+## Market-specific rules
+
+- never trade `/GF` Feeder Cattle
+- never trade `/SB` Sugar as a spread in TOS
+- Brent and Gasoil are not tradeable in the TOS workflow
+- avoid high-volatility Lean Hogs structures
+- never trade a 2-leg Crude Oil BUY structure; sell side only, 3 to 4 legs minimum
 
 ## Symbol / Broker Notes
 
