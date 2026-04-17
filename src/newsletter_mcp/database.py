@@ -474,6 +474,82 @@ class StrategyPrinciple(Base):
     strategy_section: Mapped["StrategySection | None"] = relationship(back_populates="principles")
 
 
+class EvaluationRun(Base):
+    __tablename__ = "evaluation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id: Mapped[int] = mapped_column(ForeignKey("newsletters.id", ondelete="CASCADE"), nullable=False)
+    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
+    run_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    evaluator_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    principle_set_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+    newsletter: Mapped["Newsletter"] = relationship()
+    principle_evaluations: Mapped[list["PrincipleEvaluationRecord"]] = relationship(
+        back_populates="evaluation_run",
+        cascade="all, delete-orphan",
+    )
+    watchlist_decisions: Mapped[list["WatchlistDecision"]] = relationship(
+        back_populates="evaluation_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class PrincipleEvaluationRecord(Base):
+    __tablename__ = "principle_evaluations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evaluation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    watchlist_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("watchlist_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_principle_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy_principles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    rationale_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_snapshot_json: Mapped[dict] = mapped_column("data_snapshot", JSON, nullable=False, default=dict)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    evaluation_run: Mapped["EvaluationRun"] = relationship(back_populates="principle_evaluations")
+    watchlist_entry: Mapped["WatchlistEntry"] = relationship()
+    strategy_principle: Mapped["StrategyPrinciple"] = relationship()
+
+
+class WatchlistDecision(Base):
+    __tablename__ = "watchlist_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evaluation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    watchlist_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("watchlist_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    final_outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    blocking_principles_json: Mapped[list] = mapped_column("blocking_principles", JSON, nullable=False, default=list)
+    override_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    override_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    override_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    published_to_watchlist: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
+
+    evaluation_run: Mapped["EvaluationRun"] = relationship(back_populates="watchlist_decisions")
+    watchlist_entry: Mapped["WatchlistEntry"] = relationship()
+
+
 class Database:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -787,6 +863,15 @@ class Database:
             "create index if not exists idx_strategy_sections_chapter_number on strategy_sections (chapter_number)",
             "create unique index if not exists idx_strategy_principles_document_key on strategy_principles (strategy_document_id, principle_key)",
             "create index if not exists idx_strategy_principles_category on strategy_principles (category)",
+            "create index if not exists idx_evaluation_runs_newsletter_id on evaluation_runs (newsletter_id)",
+            "create index if not exists idx_evaluation_runs_issue_date on evaluation_runs (issue_date)",
+            "create index if not exists idx_evaluation_runs_run_type on evaluation_runs (run_type)",
+            "create index if not exists idx_principle_evaluations_run_id on principle_evaluations (evaluation_run_id)",
+            "create index if not exists idx_principle_evaluations_entry_id on principle_evaluations (watchlist_entry_id)",
+            "create index if not exists idx_principle_evaluations_principle_id on principle_evaluations (strategy_principle_id)",
+            "create index if not exists idx_watchlist_decisions_run_id on watchlist_decisions (evaluation_run_id)",
+            "create index if not exists idx_watchlist_decisions_entry_id on watchlist_decisions (watchlist_entry_id)",
+            "create index if not exists idx_watchlist_decisions_outcome on watchlist_decisions (final_outcome)",
         ]
         with self.engine.begin() as connection:
             for statement in index_statements:

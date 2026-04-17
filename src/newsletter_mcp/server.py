@@ -21,12 +21,14 @@ from .business import IssueBriefDraft, IssueBriefService
 from .database import (
     ContractMonthCode,
     Database,
+    EvaluationRun,
     IssueBrief,
     IssueDelta,
     Newsletter,
     NewsletterSection,
     NewsletterCommodityCatalog,
     ParserRun,
+    PrincipleEvaluationRecord,
     PublicationArtifact,
     PublicationRun,
     StrategyDocument,
@@ -34,6 +36,7 @@ from .database import (
     StrategySection,
     SchwabFuturesCatalog,
     WatchlistEntry,
+    WatchlistDecision,
     WatchlistReferenceRecord,
 )
 from .parser import parse_newsletter
@@ -583,11 +586,43 @@ def _load_issue_principles(session: Any) -> list[StrategyPrinciple]:
     ).scalars().all()
 
 
+def _map_principle_status_to_outcome(status: str) -> str:
+    mapping = {
+        "pass": "pass",
+        "fail": "blocked",
+        "deferred": "deferred",
+        "not_applicable": "not_applicable",
+    }
+    return mapping.get(status, "error")
+
+
+def _final_outcome_for_entry(outcome: Any) -> str:
+    if outcome.tradeable:
+        return "deferred" if outcome.deferred_principles else "pass"
+    return "blocked"
+
+
+def _principle_data_snapshot(entry: WatchlistEntry, historical_context: HistoricalContext) -> dict[str, Any]:
+    return {
+        "commodity_name": entry.commodity_name,
+        "spread_code": entry.spread_code,
+        "section_name": entry.section_name,
+        "trade_quality": entry.trade_quality,
+        "ridx": entry.ridx,
+        "win_pct": entry.win_pct,
+        "same_commodity_count": historical_context.same_commodity_count(entry),
+        "prior_exact_occurrences": historical_context.occurrence_count(entry),
+        "prior_commodity_occurrences": historical_context.prior_commodity_count(entry),
+        "prior_structure_occurrences": historical_context.prior_structure_signature_count(entry),
+    }
+
+
 def _evaluate_issue_entries(
     session: Any,
     *,
     newsletter: Newsletter,
     entries: list[WatchlistEntry],
+    run_type: str = "sunday_publish",
 ) -> None:
     principles = _load_issue_principles(session)
     if not principles:
@@ -607,6 +642,21 @@ def _evaluate_issue_entries(
         .where(Newsletter.week_ended < newsletter.week_ended)
     ).scalars().all()
     historical_context = HistoricalContext.build(current_entries=entries, prior_entries=prior_entries)
+    principle_set_version = principles[0].metadata_json.get("principle_set_version", "phase3-v1") if principles else "phase3-v1"
+    evaluation_run = EvaluationRun(
+        newsletter_id=newsletter.id,
+        issue_date=newsletter.week_ended,
+        evaluator_version="phase3-v1",
+        principle_set_version=principle_set_version,
+        run_type=run_type,
+        notes=None,
+        metadata_json={
+            "entry_count": len(entries),
+            "principle_count": len(principles),
+        },
+    )
+    session.add(evaluation_run)
+    session.flush()
 
     for entry in entries:
         outcome = PrincipleEvaluationService.evaluate_entry(
@@ -624,6 +674,51 @@ def _evaluate_issue_entries(
             policy_blocked_reason,
             outcome.blocked_reason,
             outcome.blocked_guidance if not outcome.tradeable else None,
+        )
+        snapshot = _principle_data_snapshot(entry, historical_context)
+        blocking_principle_ids: list[int] = []
+        for principle in principles:
+            status = outcome.statuses.get(principle.principle_key, "error")
+            stored_outcome = _map_principle_status_to_outcome(status)
+            rationale = None
+            if stored_outcome == "blocked":
+                rationale = principle.guidance_text or outcome.decision_summary
+                blocking_principle_ids.append(principle.id)
+            elif stored_outcome == "deferred":
+                rationale = "Requires Daily workflow context or live account data."
+            elif stored_outcome == "not_applicable":
+                rationale = "This principle does not apply to the current structure."
+            else:
+                rationale = principle.summary_text
+            session.add(
+                PrincipleEvaluationRecord(
+                    evaluation_run_id=evaluation_run.id,
+                    watchlist_entry_id=entry.id,
+                    strategy_principle_id=principle.id,
+                    score=outcome.scores.get(principle.principle_key),
+                    outcome=stored_outcome,
+                    rationale_text=rationale,
+                    data_snapshot_json=snapshot,
+                    computed_at=outcome.evaluated_at,
+                )
+            )
+        session.add(
+            WatchlistDecision(
+                evaluation_run_id=evaluation_run.id,
+                watchlist_entry_id=entry.id,
+                final_outcome=_final_outcome_for_entry(outcome),
+                blocking_principles_json=blocking_principle_ids,
+                override_applied=False,
+                override_reason=None,
+                override_by=None,
+                override_at=None,
+                published_to_watchlist=entry.tradeable is not False,
+                metadata_json={
+                    "decision_summary": outcome.decision_summary,
+                    "deferred_principles": outcome.deferred_principles,
+                    "blocked_reason": outcome.blocked_reason,
+                },
+            )
         )
 
 
@@ -1489,7 +1584,12 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
         if entry.metadata_json is None:
             entry.metadata_json = {}
 
-    _evaluate_issue_entries(session, newsletter=newsletter, entries=list(newsletter.watchlist_entries))
+    _evaluate_issue_entries(
+        session,
+        newsletter=newsletter,
+        entries=list(newsletter.watchlist_entries),
+        run_type="backfill_partial",
+    )
 
     if newsletter.watchlist_reference is not None:
         reference = newsletter.watchlist_reference
@@ -1715,7 +1815,12 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             .where(WatchlistEntry.newsletter_id == newsletter.id)
             .order_by(WatchlistEntry.id)
         ).scalars().all()
-        _evaluate_issue_entries(session, newsletter=newsletter, entries=current_entries)
+        _evaluate_issue_entries(
+            session,
+            newsletter=newsletter,
+            entries=current_entries,
+            run_type="sunday_publish",
+        )
         previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
         previous_entries: list[WatchlistEntry] = []
         if previous_newsletter is not None:

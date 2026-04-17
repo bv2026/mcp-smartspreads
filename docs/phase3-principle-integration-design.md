@@ -361,6 +361,39 @@ Responsibilities:
 - hide internal-only evaluation details
 - enforce publication schema versioning
 
+## Schema Ownership And MCP Boundary
+
+Phase 3 schema ownership belongs to Newsletter MCP.
+
+Recommended decision:
+
+- `newsletter-mcp` owns the schema, migrations, repository methods, and write path for:
+  - `evaluation_runs`
+  - `principle_evaluations`
+  - `watchlist_decisions`
+- `schwab-mcp` consumes approved publication artifacts only
+- `schwab-mcp` does not write directly into Newsletter MCP tables in v1
+
+Why this boundary matters:
+
+- it preserves the current two-MCP architecture
+- it avoids turning the Newsletter database into a shared writable store
+- it keeps Sunday doctrine evaluation auditable in one system of record
+- it lets Daily logic evolve independently without hidden cross-system coupling
+
+Recommended interaction model:
+
+- Sunday:
+  - `newsletter-mcp` evaluates principles and stores durable records
+  - `newsletter-mcp` publishes approved decision summaries to `watchlist.yaml` and `weekly_intelligence.json`
+- Daily:
+  - `schwab-mcp` reads the publication contract plus live account state
+  - `schwab-mcp` resolves live-only principles such as portfolio fit and margin pressure in its own workflow
+  - `schwab-mcp` reports Daily conclusions without writing back into Newsletter MCP tables
+
+If Daily persistence becomes necessary later, add it as a separate Daily-side store or an explicit import/sync step.
+Do not introduce direct shared DB writes across MCPs unless the architecture is intentionally revised.
+
 ## Review and Audit Model
 
 Every publication should make it possible to answer:

@@ -9,7 +9,16 @@ from unittest import mock
 from sqlalchemy import select
 
 from newsletter_mcp import server
-from newsletter_mcp.database import Database, Newsletter, StrategyDocument, StrategyPrinciple, WatchlistEntry
+from newsletter_mcp.database import (
+    Database,
+    EvaluationRun,
+    Newsletter,
+    PrincipleEvaluationRecord,
+    StrategyDocument,
+    StrategyPrinciple,
+    WatchlistDecision,
+    WatchlistEntry,
+)
 from newsletter_mcp.models import ParsedNewsletter, SectionSummary, WatchlistReference, WatchlistRow
 
 
@@ -161,6 +170,15 @@ class PrincipleEvaluationTests(unittest.TestCase):
             self.assertTrue(entries[0].tradeable)
             self.assertFalse(entries[1].tradeable)
             self.assertIsNotNone(second_eval["blocked_reason"])
+            runs = session.execute(select(EvaluationRun).order_by(EvaluationRun.id)).scalars().all()
+            principle_rows = session.execute(select(PrincipleEvaluationRecord)).scalars().all()
+            decisions = session.execute(select(WatchlistDecision).order_by(WatchlistDecision.id)).scalars().all()
+            self.assertEqual(len(runs), 2)
+            self.assertEqual(runs[-1].run_type, "sunday_publish")
+            self.assertEqual(len(principle_rows), 3 * len(server.STRATEGY_PRINCIPLE_SEED))
+            self.assertEqual(len(decisions), 3)
+            self.assertEqual(decisions[-2].final_outcome, "deferred")
+            self.assertEqual(decisions[-1].final_outcome, "blocked")
 
 
 if __name__ == "__main__":
