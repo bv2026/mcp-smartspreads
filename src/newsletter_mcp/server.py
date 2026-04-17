@@ -40,7 +40,7 @@ from .database import (
     WatchlistReferenceRecord,
 )
 from .parser import parse_newsletter
-from .principle_evaluation import HistoricalContext, PrincipleEvaluationService
+from .principle_evaluation import HistoricalContext, IntelligenceContext, PrincipleEvaluationService
 
 
 PARSER_VERSION = "phase1-v1"
@@ -617,13 +617,81 @@ def _principle_data_snapshot(entry: WatchlistEntry, historical_context: Historic
     }
 
 
+def _entry_identity_key(commodity_name: str | None, spread_code: str | None) -> str:
+    return f"{str(commodity_name or '').strip().lower()}::{str(spread_code or '').strip().lower()}"
+
+
+def _extract_intelligence_commodities(entries: list[WatchlistEntry], texts: list[str]) -> frozenset[str]:
+    combined_text = " ".join(text for text in texts if text).lower()
+    matches = {
+        entry.commodity_name.strip().lower()
+        for entry in entries
+        if entry.commodity_name and entry.commodity_name.strip().lower() in combined_text
+    }
+    return frozenset(matches)
+
+
+def _build_intelligence_context(
+    newsletter: Newsletter,
+    entries: list[WatchlistEntry],
+    brief_data: IssueBriefDraft,
+    delta: IssueDelta | None,
+    reference: WatchlistReferenceRecord | None,
+) -> IntelligenceContext:
+    highlighted = _extract_intelligence_commodities(
+        entries,
+        [newsletter.overall_summary, *brief_data.key_themes],
+    )
+    opportunities = _extract_intelligence_commodities(entries, brief_data.notable_opportunities)
+    risks = _extract_intelligence_commodities(entries, brief_data.notable_risks)
+    added_entry_keys = frozenset(
+        _entry_identity_key(item.get("commodity_name"), item.get("spread_code"))
+        for item in ((delta.added_entries_json if delta is not None else []) or [])
+    )
+    changed_entry_keys = frozenset(
+        _entry_identity_key(item.get("commodity_name"), item.get("spread_code"))
+        for item in (
+            [
+                (change.get("current") or {})
+                for change in ((delta.changed_entries_json if delta is not None else []) or [])
+            ]
+        )
+    )
+    summary_text = " ".join(
+        part
+        for part in [
+            newsletter.overall_summary,
+            *brief_data.key_themes,
+            *brief_data.notable_risks,
+            *brief_data.notable_opportunities,
+            delta.summary_text if delta is not None else "",
+        ]
+        if part
+    ).lower()
+    reference_rule_count = 0
+    if reference is not None:
+        reference_rule_count = len(reference.trading_rules_json or []) + len(reference.classification_rules_json or [])
+
+    return IntelligenceContext(
+        summary_text=summary_text,
+        highlighted_commodities=highlighted,
+        risk_commodities=risks,
+        opportunity_commodities=opportunities,
+        added_entry_keys=added_entry_keys,
+        changed_entry_keys=changed_entry_keys,
+        reference_rule_count=reference_rule_count,
+    )
+
+
 def _evaluate_issue_entries(
     session: Any,
     *,
     newsletter: Newsletter,
     entries: list[WatchlistEntry],
     run_type: str = "sunday_publish",
+    intelligence_context: IntelligenceContext | None = None,
 ) -> None:
+    intelligence_context = intelligence_context or IntelligenceContext.empty()
     principles = _load_issue_principles(session)
     if not principles:
         for entry in entries:
@@ -653,6 +721,7 @@ def _evaluate_issue_entries(
         metadata_json={
             "entry_count": len(entries),
             "principle_count": len(principles),
+            "intelligence_context": intelligence_context.as_metadata(),
         },
     )
     session.add(evaluation_run)
@@ -663,6 +732,7 @@ def _evaluate_issue_entries(
             entry=entry,
             principles=principles,
             historical_context=historical_context,
+            intelligence_context=intelligence_context,
         )
         legs = _parse_spread_legs(entry.spread_code)
         policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
@@ -676,6 +746,8 @@ def _evaluate_issue_entries(
             outcome.blocked_guidance if not outcome.tradeable else None,
         )
         snapshot = _principle_data_snapshot(entry, historical_context)
+        snapshot["intelligence_context"] = outcome.intelligence_context
+        snapshot["principle_influences"] = outcome.principle_influences
         blocking_principle_ids: list[int] = []
         for principle in principles:
             status = outcome.statuses.get(principle.principle_key, "error")
@@ -717,6 +789,8 @@ def _evaluate_issue_entries(
                     "decision_summary": outcome.decision_summary,
                     "deferred_principles": outcome.deferred_principles,
                     "blocked_reason": outcome.blocked_reason,
+                    "intelligence_context": outcome.intelligence_context,
+                    "principle_influences": outcome.principle_influences,
                 },
             )
         )
@@ -837,6 +911,8 @@ def _build_watchlist_publication_entry(
         "decision_summary": principle_evaluation.get("decision_summary"),
         "principle_scores": principle_evaluation.get("principle_scores", {}),
         "principle_status": principle_evaluation.get("principle_status", {}),
+        "principle_influences": principle_evaluation.get("principle_influences", {}),
+        "intelligence_context": principle_evaluation.get("intelligence_context", {}),
         "deferred_principles": principle_evaluation.get("deferred_principles", []),
         "principle_evaluation_ts": principle_evaluation.get("evaluated_at"),
         "evaluation_version": principle_evaluation.get("evaluation_version"),
@@ -1584,13 +1660,6 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
         if entry.metadata_json is None:
             entry.metadata_json = {}
 
-    _evaluate_issue_entries(
-        session,
-        newsletter=newsletter,
-        entries=list(newsletter.watchlist_entries),
-        run_type="backfill_partial",
-    )
-
     if newsletter.watchlist_reference is not None:
         reference = newsletter.watchlist_reference
         if reference.parser_run_id is None:
@@ -1636,6 +1705,28 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
         issue_delta.removed_entries_json = removed_entries
         issue_delta.changed_entries_json = changed_entries
         issue_delta.summary_text = delta_summary
+
+    pre_eval_brief_data = _build_issue_brief_draft(
+        title=newsletter.title,
+        executive_summary=newsletter.overall_summary,
+        entries=list(newsletter.watchlist_entries),
+        delta=issue_delta,
+        reference=newsletter.watchlist_reference,
+    )
+    intelligence_context = _build_intelligence_context(
+        newsletter,
+        list(newsletter.watchlist_entries),
+        pre_eval_brief_data,
+        issue_delta,
+        newsletter.watchlist_reference,
+    )
+    _evaluate_issue_entries(
+        session,
+        newsletter=newsletter,
+        entries=list(newsletter.watchlist_entries),
+        run_type="backfill_partial",
+        intelligence_context=intelligence_context,
+    )
 
     issue_brief = session.execute(
         select(IssueBrief).where(IssueBrief.newsletter_id == newsletter.id)
@@ -1815,12 +1906,6 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             .where(WatchlistEntry.newsletter_id == newsletter.id)
             .order_by(WatchlistEntry.id)
         ).scalars().all()
-        _evaluate_issue_entries(
-            session,
-            newsletter=newsletter,
-            entries=current_entries,
-            run_type="sunday_publish",
-        )
         previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
         previous_entries: list[WatchlistEntry] = []
         if previous_newsletter is not None:
@@ -1850,8 +1935,27 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             changed_entries_json=changed_entries,
             summary_text=delta_summary,
         )
-        session.add(
-            issue_delta
+        session.add(issue_delta)
+        pre_eval_brief_data = _build_issue_brief_draft(
+            title=newsletter.title,
+            executive_summary=newsletter.overall_summary,
+            entries=current_entries,
+            delta=issue_delta,
+            reference=newsletter.watchlist_reference,
+        )
+        intelligence_context = _build_intelligence_context(
+            newsletter,
+            current_entries,
+            pre_eval_brief_data,
+            issue_delta,
+            newsletter.watchlist_reference,
+        )
+        _evaluate_issue_entries(
+            session,
+            newsletter=newsletter,
+            entries=current_entries,
+            run_type="sunday_publish",
+            intelligence_context=intelligence_context,
         )
         brief_data = _build_issue_brief_draft(
             title=newsletter.title,
@@ -2693,6 +2797,8 @@ def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
         "blocked_reason": entry.blocked_reason,
         "principle_scores": principle_evaluation.get("principle_scores", {}),
         "principle_status": principle_evaluation.get("principle_status", {}),
+        "principle_influences": principle_evaluation.get("principle_influences", {}),
+        "intelligence_context": principle_evaluation.get("intelligence_context", {}),
         "decision_summary": principle_evaluation.get("decision_summary"),
     }
 

@@ -57,7 +57,14 @@ def _make_row(
     )
 
 
-def _make_parsed_newsletter(base_dir: Path, *, week_ended: date, file_hash: str, rows: list[WatchlistRow]) -> ParsedNewsletter:
+def _make_parsed_newsletter(
+    base_dir: Path,
+    *,
+    week_ended: date,
+    file_hash: str,
+    rows: list[WatchlistRow],
+    overall_summary: str = "Weekly summary",
+) -> ParsedNewsletter:
     source_file = base_dir / f"issue-{week_ended.isoformat()}.pdf"
     source_file.write_bytes(b"pdf")
     return ParsedNewsletter(
@@ -67,7 +74,7 @@ def _make_parsed_newsletter(base_dir: Path, *, week_ended: date, file_hash: str,
         week_ended=week_ended,
         raw_text="Raw text",
         metadata={"page_count": 12, "source_filename": source_file.name},
-        overall_summary="Weekly summary",
+        overall_summary=overall_summary,
         section_summaries=[
             SectionSummary(
                 name="Watch List",
@@ -149,6 +156,7 @@ class PrincipleEvaluationTests(unittest.TestCase):
             week_ended=date(2026, 4, 10),
             file_hash="current-hash",
             rows=[_make_row(), _make_row(commodity_name="Corn", spread_code="CU26-CN26", trade_quality="Tier 3")],
+            overall_summary="Corn remains the lead opportunity this week, but volatility still matters.",
         )
 
         server._save_parsed_newsletter(prior)
@@ -167,6 +175,13 @@ class PrincipleEvaluationTests(unittest.TestCase):
             self.assertEqual(first_eval["evaluation_version"], "phase3-v1")
             self.assertIn("structure_before_conviction", first_eval["principle_scores"])
             self.assertIn("portfolio_fit_over_isolated_trade_appeal", first_eval["deferred_principles"])
+            self.assertIn("intelligence_context", first_eval)
+            self.assertIn("corn", first_eval["intelligence_context"]["highlighted_commodities"])
+            self.assertIn("principle_influences", first_eval)
+            self.assertTrue(
+                any(first_eval["principle_influences"].values()),
+                "Expected at least one intelligence-driven influence to be recorded.",
+            )
             self.assertTrue(entries[0].tradeable)
             self.assertFalse(entries[1].tradeable)
             self.assertIsNotNone(second_eval["blocked_reason"])
@@ -175,10 +190,13 @@ class PrincipleEvaluationTests(unittest.TestCase):
             decisions = session.execute(select(WatchlistDecision).order_by(WatchlistDecision.id)).scalars().all()
             self.assertEqual(len(runs), 2)
             self.assertEqual(runs[-1].run_type, "sunday_publish")
+            self.assertIn("intelligence_context", runs[-1].metadata_json)
             self.assertEqual(len(principle_rows), 3 * len(server.STRATEGY_PRINCIPLE_SEED))
+            self.assertIn("intelligence_context", principle_rows[0].data_snapshot_json)
             self.assertEqual(len(decisions), 3)
             self.assertEqual(decisions[-2].final_outcome, "deferred")
             self.assertEqual(decisions[-1].final_outcome, "blocked")
+            self.assertIn("principle_influences", decisions[-1].metadata_json)
 
 
 if __name__ == "__main__":

@@ -65,6 +65,40 @@ class HistoricalContext:
 
 
 @dataclass(frozen=True, slots=True)
+class IntelligenceContext:
+    summary_text: str
+    highlighted_commodities: frozenset[str]
+    risk_commodities: frozenset[str]
+    opportunity_commodities: frozenset[str]
+    added_entry_keys: frozenset[str]
+    changed_entry_keys: frozenset[str]
+    reference_rule_count: int
+
+    @staticmethod
+    def empty() -> "IntelligenceContext":
+        return IntelligenceContext(
+            summary_text="",
+            highlighted_commodities=frozenset(),
+            risk_commodities=frozenset(),
+            opportunity_commodities=frozenset(),
+            added_entry_keys=frozenset(),
+            changed_entry_keys=frozenset(),
+            reference_rule_count=0,
+        )
+
+    def as_metadata(self) -> dict[str, Any]:
+        return {
+            "summary_text": self.summary_text,
+            "highlighted_commodities": sorted(self.highlighted_commodities),
+            "risk_commodities": sorted(self.risk_commodities),
+            "opportunity_commodities": sorted(self.opportunity_commodities),
+            "added_entry_keys": sorted(self.added_entry_keys),
+            "changed_entry_keys": sorted(self.changed_entry_keys),
+            "reference_rule_count": self.reference_rule_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class PrincipleEvaluationOutcome:
     evaluation_version: str
     tradeable: bool
@@ -73,9 +107,11 @@ class PrincipleEvaluationOutcome:
     decision_summary: str
     scores: dict[str, float | None]
     statuses: dict[str, str]
+    principle_influences: dict[str, list[str]]
     violations: list[str]
     deferred_principles: list[str]
     evaluated_at: datetime
+    intelligence_context: dict[str, Any]
 
     def as_metadata(self) -> dict[str, Any]:
         return {
@@ -86,8 +122,10 @@ class PrincipleEvaluationOutcome:
             "decision_summary": self.decision_summary,
             "principle_scores": self.scores,
             "principle_status": self.statuses,
+            "principle_influences": self.principle_influences,
             "violations": self.violations,
             "deferred_principles": self.deferred_principles,
+            "intelligence_context": self.intelligence_context,
             "evaluated_at": self.evaluated_at.isoformat(),
         }
 
@@ -99,17 +137,26 @@ class PrincipleEvaluationService:
         entry: Any,
         principles: list[Any],
         historical_context: HistoricalContext,
+        intelligence_context: IntelligenceContext | None = None,
     ) -> PrincipleEvaluationOutcome:
+        intelligence_context = intelligence_context or IntelligenceContext.empty()
         scores: dict[str, float | None] = {}
         statuses: dict[str, str] = {}
+        influences: dict[str, list[str]] = {}
         violations: list[str] = []
         deferred: list[str] = []
         first_failed_principle: Any | None = None
 
         for principle in sorted(principles, key=lambda item: (item.priority or 99, item.principle_key)):
-            score, status = _evaluate_principle(entry, principle, historical_context)
+            score, status, principle_influence = _evaluate_principle(
+                entry,
+                principle,
+                historical_context,
+                intelligence_context,
+            )
             scores[principle.principle_key] = score
             statuses[principle.principle_key] = status
+            influences[principle.principle_key] = principle_influence
             if status == "fail":
                 violations.append(principle.principle_key)
                 if first_failed_principle is None and (principle.priority or 99) <= 1:
@@ -142,40 +189,119 @@ class PrincipleEvaluationService:
             decision_summary=decision_summary,
             scores=scores,
             statuses=statuses,
+            principle_influences=influences,
             violations=violations,
             deferred_principles=deferred,
             evaluated_at=utcnow(),
+            intelligence_context=intelligence_context.as_metadata(),
         )
 
 
-def _evaluate_principle(entry: Any, principle: Any, historical_context: HistoricalContext) -> tuple[float | None, str]:
+def _evaluate_principle(
+    entry: Any,
+    principle: Any,
+    historical_context: HistoricalContext,
+    intelligence_context: IntelligenceContext,
+) -> tuple[float | None, str, list[str]]:
     key = principle.principle_key
     if key == "portfolio_fit_over_isolated_trade_appeal":
-        return None, "deferred"
+        return None, "deferred", []
     if key == "margin_as_survivability_constraint":
-        return None, "deferred"
+        return None, "deferred", []
     if key == "intercommodity_conditional_edge" and getattr(entry, "section_name", "") != "inter_commodity":
-        return None, "not_applicable"
+        return None, "not_applicable", []
 
-    score = _score_principle(entry, principle, historical_context)
+    score, influences = _score_principle(entry, principle, historical_context, intelligence_context)
     threshold = _threshold_for(principle)
     status = "pass" if score >= threshold else "fail"
-    return round(score, 4), status
+    return round(score, 4), status, influences
 
 
-def _score_principle(entry: Any, principle: Any, historical_context: HistoricalContext) -> float:
+def _score_principle(
+    entry: Any,
+    principle: Any,
+    historical_context: HistoricalContext,
+    intelligence_context: IntelligenceContext,
+) -> tuple[float, list[str]]:
     key = principle.principle_key
     if key == "structure_before_conviction":
-        return _score_structure_before_conviction(entry, historical_context)
-    if key == "selectivity_not_participation":
-        return _score_selectivity(entry, historical_context)
-    if key == "trade_selection_dominates_trade_management":
-        return _score_trade_selection(entry)
-    if key == "volatility_as_constraint":
-        return _score_volatility(entry)
-    if key == "intercommodity_conditional_edge":
-        return _score_intercommodity(entry)
-    return 1.0
+        score = _score_structure_before_conviction(entry, historical_context)
+    elif key == "selectivity_not_participation":
+        score = _score_selectivity(entry, historical_context)
+    elif key == "trade_selection_dominates_trade_management":
+        score = _score_trade_selection(entry)
+    elif key == "volatility_as_constraint":
+        score = _score_volatility(entry)
+    elif key == "intercommodity_conditional_edge":
+        score = _score_intercommodity(entry)
+    else:
+        score = 1.0
+    return _apply_intelligence_adjustments(
+        entry=entry,
+        principle_key=key,
+        base_score=score,
+        intelligence_context=intelligence_context,
+    )
+
+
+def _apply_intelligence_adjustments(
+    *,
+    entry: Any,
+    principle_key: str,
+    base_score: float,
+    intelligence_context: IntelligenceContext,
+) -> tuple[float, list[str]]:
+    score = base_score
+    influences: list[str] = []
+    commodity = _normalize_text(getattr(entry, "commodity_name", ""))
+    entry_key = _entry_identity(entry)
+    summary_text = intelligence_context.summary_text
+
+    if commodity and commodity in intelligence_context.highlighted_commodities:
+        score += 0.04
+        influences.append("weekly_intelligence.highlighted_commodity")
+
+    if commodity and commodity in intelligence_context.opportunity_commodities and principle_key in {
+        "structure_before_conviction",
+        "selectivity_not_participation",
+        "trade_selection_dominates_trade_management",
+    }:
+        score += 0.05
+        influences.append("weekly_intelligence.opportunity_signal")
+
+    if commodity and commodity in intelligence_context.risk_commodities and principle_key in {
+        "selectivity_not_participation",
+        "volatility_as_constraint",
+        "intercommodity_conditional_edge",
+    }:
+        score -= 0.06
+        influences.append("weekly_intelligence.risk_signal")
+
+    if entry_key in intelligence_context.added_entry_keys and principle_key == "structure_before_conviction":
+        score -= 0.04
+        influences.append("issue_delta.new_this_week")
+
+    if entry_key in intelligence_context.changed_entry_keys and principle_key in {
+        "trade_selection_dominates_trade_management",
+        "volatility_as_constraint",
+    }:
+        score -= 0.03
+        influences.append("issue_delta.changed_since_prior_issue")
+
+    if intelligence_context.reference_rule_count and principle_key == "intercommodity_conditional_edge":
+        score += 0.02
+        influences.append("watchlist_reference.rule_context")
+
+    if "volatility" in summary_text and principle_key == "volatility_as_constraint":
+        volatility = _normalize_text(getattr(entry, "volatility_structure", None))
+        if volatility in {"high", "expanded"}:
+            score -= 0.04
+            influences.append("weekly_intelligence.volatility_emphasis")
+        else:
+            score += 0.02
+            influences.append("weekly_intelligence.volatility_emphasis")
+
+    return max(0.0, min(1.0, score)), list(dict.fromkeys(influences))
 
 
 def _score_structure_before_conviction(entry: Any, historical_context: HistoricalContext) -> float:
@@ -298,6 +424,10 @@ def _occurrence_key(entry: Any) -> str:
 def _structure_signature(entry: Any) -> str:
     roots = [match.group(1) for match in CONTRACT_TOKEN_RE.finditer(str(getattr(entry, "spread_code", "") or ""))]
     return "-".join(roots)
+
+
+def _entry_identity(entry: Any) -> str:
+    return f"{_normalize_text(getattr(entry, 'commodity_name', ''))}::{_normalize_text(getattr(entry, 'spread_code', ''))}"
 
 
 def _normalize_text(value: Any) -> str:

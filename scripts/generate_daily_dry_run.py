@@ -266,6 +266,18 @@ def _blocked_entries(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _intelligence_influenced_entries(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    influenced: list[dict[str, Any]] = []
+    for entry in watchlist:
+        influences = entry.get("principle_influences", {})
+        non_empty = {key: values for key, values in influences.items() if values}
+        if non_empty:
+            enriched = dict(entry)
+            enriched["_non_empty_influences"] = non_empty
+            influenced.append(enriched)
+    return influenced
+
+
 def _build_principle_section(
     *,
     watchlist_doc: dict[str, Any],
@@ -276,6 +288,7 @@ def _build_principle_section(
     blocked_entries = _blocked_entries(watchlist)
     deferred_entries = _deferred_entries(watchlist)
     high_conviction = _high_conviction_entries(watchlist)
+    intelligence_influenced = _intelligence_influenced_entries(watchlist)
 
     lines = [
         "## WEEKLY PRINCIPLE CONTEXT",
@@ -319,6 +332,20 @@ def _build_principle_section(
             lines.append(f"- `{entry['spread_code']}` deferred for: {deferred}")
     else:
         lines.append("- No entries were deferred for Daily review.")
+    lines.append("")
+
+    lines.append("### Weekly Intelligence Signals Applied")
+    lines.append("")
+    if intelligence_influenced:
+        for entry in intelligence_influenced[:5]:
+            influence_labels = []
+            for principle_key, values in entry["_non_empty_influences"].items():
+                influence_labels.append(f"{principle_key}: {', '.join(values)}")
+            lines.append(
+                f"- `{entry['spread_code']}` intelligence influenced: {' | '.join(influence_labels)}"
+            )
+    else:
+        lines.append("- No entries recorded explicit Weekly Intelligence influences.")
     lines.append("")
 
     lines.append("### Blocked Weekly Ideas")

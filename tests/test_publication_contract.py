@@ -172,6 +172,8 @@ class PublicationContractTests(unittest.TestCase):
         self.assertEqual(watchlist_payload["watchlist"][0]["tradeable"], True)
         self.assertIn("principle_scores", watchlist_payload["watchlist"][0])
         self.assertIn("principle_status", watchlist_payload["watchlist"][0])
+        self.assertIn("principle_influences", watchlist_payload["watchlist"][0])
+        self.assertIn("intelligence_context", watchlist_payload["watchlist"][0])
         self.assertEqual(watchlist_payload["watchlist"][1]["tradeable"], False)
         self.assertIn("Sugar #11 is not tradeable", watchlist_payload["watchlist"][1]["blocked_reason"])
 
