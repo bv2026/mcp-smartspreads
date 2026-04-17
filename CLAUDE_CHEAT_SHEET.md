@@ -18,6 +18,7 @@ Use this when you want fast, reliable prompts for:
 - Prefer `get_daily_exit_schedule(...)` over asking Claude to manually infer exits.
 - If stream marks are stale, ask Claude to downgrade confidence in pricing-based conclusions.
 - Use the strategy layer when you want "why this matters" instead of just "what the newsletter says."
+- When Claude gets noisy, add: `Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.`
 
 ---
 
@@ -64,6 +65,8 @@ Use these after:
 ### 1. Best Daily morning brief
 
 ```text
+Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+
 Use schwab-smartspreads-file first to get stream status, futures positions, and watchlist pricing. Then use newsletter-mcp get_daily_exit_schedule with the futures-positions result, and use get_issue_summary for weekly context. Give me a concise morning brief with:
 - stream/data quality status
 - open positions ordered by nearest exit
@@ -77,6 +80,8 @@ If marks are stale, clearly downgrade confidence in pricing-based conclusions, b
 ### 2. Daily action plan
 
 ```text
+Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+
 Use schwab-smartspreads-file first to get today's futures positions and current watchlist pricing. Then use newsletter-mcp get_daily_exit_schedule with that futures-positions result. Create today's action plan using the latest published newsletter intelligence plus current Schwab data. Include:
 - open positions that need attention
 - watchlist ideas that are currently actionable
@@ -89,6 +94,8 @@ Use schwab-smartspreads-file first to get today's futures positions and current 
 ### 3. Exit schedule only
 
 ```text
+Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+
 Use schwab-smartspreads-file first to get today's futures positions, then use newsletter-mcp get_daily_exit_schedule with that result. Do not search past conversations. Respond only with:
 - matched positions and exit dates
 - unmatched positions
@@ -170,6 +177,7 @@ Use newsletter-mcp list_strategy_principles and get_issue_summary for 2026-04-10
 - Say `Do not restate raw JSON` when you want cleaner prose.
 - Say `Keep it concise` when you want a compact answer.
 - Say `Do not search past conversations` when the DB/history should be the source of truth.
+- Say `Do not show tool discovery, function schemas, internal steps, or MCP details` when Claude starts dumping tool chatter.
 - Say `Use schwab-smartspreads-file first` when the Daily workflow depends on current positions/pricing.
 - Say `Use newsletter-mcp only` when you want historical/intelligence answers without Daily operational data.
 
@@ -193,6 +201,8 @@ Use newsletter-mcp list_strategy_principles and get_issue_summary for 2026-04-10
 If you use only one prompt most days, use this:
 
 ```text
+Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+
 Use schwab-smartspreads-file first to get stream status, futures positions, and watchlist pricing. Then use newsletter-mcp get_daily_exit_schedule with the futures-positions result, and use get_issue_summary for weekly context. Give me a concise morning brief with:
 - stream/data quality status
 - open positions ordered by nearest exit
