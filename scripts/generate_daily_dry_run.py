@@ -163,6 +163,22 @@ def _format_plain(value: float | None, digits: int = 3) -> str:
     return f"{value:.{digits}f}".rstrip("0").rstrip(".")
 
 
+def _format_pct(value: float | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value:.0%}"
+
+
+def _clean_blocked_reason(entry: dict[str, Any]) -> str:
+    blocked_reason = entry.get("blocked_reason")
+    if blocked_reason:
+        return blocked_reason
+    decision_summary = entry.get("decision_summary")
+    if decision_summary:
+        return decision_summary
+    return "Blocked by publication rules."
+
+
 def _load_latest_dead_symbols() -> list[str]:
     if not STREAM_LOG_PATH.exists():
         return []
@@ -198,7 +214,7 @@ def _build_watchlist_rows(watchlist: list[dict[str, Any]], mark_lookup: dict[str
         if item.get("manual_legs_required"):
             entry_plan = "Manual legs required in TOS"
         if not item.get("tradeable", True):
-            entry_plan = f"Blocked: {item.get('blocked_reason')}"
+            entry_plan = f"Blocked: {_clean_blocked_reason(item)}"
         overlap = set(item.get("legs", [])) & open_leg_symbols
         if overlap:
             entry_plan = f"Conflict / overlap: {', '.join(sorted(overlap))}"
@@ -216,6 +232,108 @@ def _build_watchlist_rows(watchlist: list[dict[str, Any]], mark_lookup: dict[str
         idx += 1
         enriched.append(item)
     return lines, enriched
+
+
+def _high_conviction_entries(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def score(entry: dict[str, Any]) -> float:
+        scores = entry.get("principle_scores", {})
+        numeric = [value for value in scores.values() if isinstance(value, (int, float))]
+        if not numeric:
+            return 0.0
+        return max(numeric)
+
+    return sorted(
+        [
+            entry for entry in watchlist
+            if entry.get("tradeable", True) and score(entry) >= 0.8
+        ],
+        key=score,
+        reverse=True,
+    )
+
+
+def _deferred_entries(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        entry for entry in watchlist
+        if entry.get("deferred_principles")
+    ]
+
+
+def _blocked_entries(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        entry for entry in watchlist
+        if not entry.get("tradeable", True)
+    ]
+
+
+def _build_principle_section(
+    *,
+    watchlist_doc: dict[str, Any],
+    watchlist: list[dict[str, Any]],
+    open_leg_symbols: set[str],
+) -> list[str]:
+    principle_context = watchlist_doc.get("principle_context", {})
+    blocked_entries = _blocked_entries(watchlist)
+    deferred_entries = _deferred_entries(watchlist)
+    high_conviction = _high_conviction_entries(watchlist)
+
+    lines = [
+        "## WEEKLY PRINCIPLE CONTEXT",
+        "",
+        f"- Evaluated entries: `{principle_context.get('evaluated_entries', 0)}` of `{principle_context.get('total_entries', len(watchlist))}`",
+        f"- Tradeable after Sunday screening: `{principle_context.get('tradeable_entries', 0)}`",
+        f"- Blocked by principles: `{principle_context.get('blocked_by_principles', 0)}`",
+        f"- Deferred for Daily review: `{principle_context.get('deferred_for_daily_review', 0)}`",
+        f"- Weekly selectivity ratio: `{_format_pct(principle_context.get('selectivity_ratio'))}`",
+        "",
+    ]
+
+    top_violations = principle_context.get("top_violations", {})
+    if top_violations:
+        lines.append("### Top Weekly Violations")
+        lines.append("")
+        for key, count in top_violations.items():
+            lines.append(f"- `{key}`: {count}")
+        lines.append("")
+
+    lines.append("### High-Conviction Entries Passing Sunday Screening")
+    lines.append("")
+    if high_conviction:
+        for entry in high_conviction[:5]:
+            overlap = sorted(set(entry.get("legs", [])) & open_leg_symbols)
+            action_note = "Review" if not overlap else f"Conflict / overlap: {', '.join(overlap)}"
+            lines.append(
+                f"- `{entry['spread_code']}` ({entry.get('tier', 'Unclassified')})"
+                f" | summary: {entry.get('decision_summary') or 'Passes Sunday screening.'}"
+                f" | Daily action: {action_note}"
+            )
+    else:
+        lines.append("- No entries currently meet the high-conviction Sunday screen.")
+    lines.append("")
+
+    lines.append("### Deferred Daily Review Items")
+    lines.append("")
+    if deferred_entries:
+        for entry in deferred_entries[:5]:
+            deferred = ", ".join(entry.get("deferred_principles", []))
+            lines.append(f"- `{entry['spread_code']}` deferred for: {deferred}")
+    else:
+        lines.append("- No entries were deferred for Daily review.")
+    lines.append("")
+
+    lines.append("### Blocked Weekly Ideas")
+    lines.append("")
+    if blocked_entries:
+        for entry in blocked_entries[:5]:
+            lines.append(
+                f"- `{entry['spread_code']}` blocked: {_clean_blocked_reason(entry)}"
+            )
+    else:
+        lines.append("- No entries were blocked by Sunday screening.")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    return lines
 
 
 def main() -> None:
@@ -260,9 +378,14 @@ def main() -> None:
             spread.alignment_status = resolved.get("alignment_status", "unmatched")
     configured_spread_count = len(positions_doc.get("positions", []))
 
-    watchlist_lines, _ = _build_watchlist_rows(watchlist_doc["watchlist"], mark_lookup, open_leg_symbols)
+    watchlist_lines, enriched_watchlist = _build_watchlist_rows(watchlist_doc["watchlist"], mark_lookup, open_leg_symbols)
     conflicts = _find_watchlist_conflicts(watchlist_doc["watchlist"], open_leg_symbols)
     dead_symbols = _load_latest_dead_symbols()
+    principle_section_lines = _build_principle_section(
+        watchlist_doc=watchlist_doc,
+        watchlist=enriched_watchlist,
+        open_leg_symbols=open_leg_symbols,
+    )
 
     statement_mtime = datetime.fromtimestamp(TOS_CSV_PATH.stat().st_mtime)
     screenshot_mtime = datetime.fromtimestamp(TOS_PNG_PATH.stat().st_mtime)
@@ -276,9 +399,20 @@ def main() -> None:
     lines.append(f"- TOS statement freshness: `{statement_mtime.strftime('%Y-%m-%d %I:%M:%S %p')}`")
     lines.append(f"- TOS screenshot freshness: `{screenshot_mtime.strftime('%Y-%m-%d %I:%M:%S %p')}`")
     lines.append(f"- Stream dead symbols currently observed: `{', '.join(dead_symbols) if dead_symbols else 'none'}`")
+    issue_brief = intelligence.get("issue_brief", {})
+    watchlist_summary = issue_brief.get("watchlist_summary", {})
+    principle_context = watchlist_doc.get("principle_context", {})
+    lines.append(
+        f"- Weekly screening snapshot: `{principle_context.get('tradeable_entries', 0)}` tradeable / `{principle_context.get('blocked_by_principles', 0)}` blocked / selectivity `{_format_pct(principle_context.get('selectivity_ratio'))}`"
+    )
+    if watchlist_summary:
+        lines.append(
+            f"- Weekly issue concentration: category counts `{json.dumps(watchlist_summary.get('category_counts', {}), sort_keys=True)}`"
+        )
     lines.append("")
     lines.append("---")
     lines.append("")
+    lines.extend(principle_section_lines)
     lines.append("## COMPLETE INTRA-COMMODITY WATCHLIST - Dry-Run Spread Values")
     lines.append(f"**{report_date.strftime('%A, %B %d, %Y')}**")
     lines.append("")
@@ -423,6 +557,8 @@ def main() -> None:
     lines.append("")
     lines.append("## NEXT ACTIONS")
     lines.append("")
+    high_conviction = _high_conviction_entries(enriched_watchlist)
+    deferred_entries = _deferred_entries(enriched_watchlist)
     urgent_spreads = [
         spread for spread in spread_summaries if spread.urgency_bucket in {"overdue", "due_today", "due_this_week"}
     ]
@@ -438,9 +574,24 @@ def main() -> None:
         lines.append(f"2. Do not enter conflicting watchlist ideas: {', '.join(item['spread_code'] for item in conflicts)}.")
     else:
         lines.append("2. No direct watchlist leg-overlap conflicts were detected in the dry run.")
-    lines.append("3. Treat VIX-family setups as manual-leg-only workflow items, not native spread entries.")
+    if deferred_entries:
+        lines.append(
+            "3. Resolve Daily deferred principle checks first: "
+            + ", ".join(entry["spread_code"] for entry in deferred_entries[:3])
+            + "."
+        )
+    elif high_conviction:
+        lines.append(
+            "3. Review the best Sunday-screened ideas for portfolio fit: "
+            + ", ".join(entry["spread_code"] for entry in high_conviction[:3])
+            + "."
+        )
+    else:
+        lines.append("3. No strong Sunday-screened candidates are currently waiting on Daily review.")
     if dead_symbols:
         lines.append(f"4. Treat these symbols as unsupported/no-tick until proven otherwise: {', '.join(dead_symbols)}.")
+    else:
+        lines.append("4. No current dead-symbol list was detected from the stream log.")
     if configured_spread_count != len(spread_summaries):
         lines.append(
             "5. Reconcile positions.yaml with the live TOS spread set before trusting the spread-group section fully."
@@ -468,6 +619,7 @@ def main() -> None:
         "",
         "- The generated report includes the same major workflow sections: watchlist values, imported positions, spread calculations, position changes, conflicts, exit schedule, portfolio summary, portfolio status, and next actions.",
         "- The generated report now surfaces VIX manual-leg support limits explicitly, which is an improvement over treating those as unexplained dead symbols.",
+        "- The generated report now includes weekly principle context, blocked ideas, and deferred Daily review items from the published Phase 3 contract.",
         "",
         "## Discrepancies",
         "",
