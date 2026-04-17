@@ -10,6 +10,7 @@ Current milestone: Phase 1 and Phase 2 are complete for the currently intended s
 - [`USAGE.md`](./USAGE.md) for setup, MCP queries, and export workflows
 - [`PROMPTS.md`](./PROMPTS.md) for reusable prompt patterns
 - [`CLAUDE_CHEAT_SHEET.md`](./CLAUDE_CHEAT_SHEET.md) for a short copy-paste guide for Claude workflows
+- [`CLAUDE_PROJECT_INSTRUCTIONS.md`](./CLAUDE_PROJECT_INSTRUCTIONS.md) for the recommended short Claude Project Instructions
 - [`TEST_PROMPTS.md`](./TEST_PROMPTS.md) for reliable intelligence-testing prompts and prompts to avoid
 - [`PHASED_ARCHITECTURE.md`](./PHASED_ARCHITECTURE.md) for the two-workflow, two-phase system design
 - [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
@@ -19,6 +20,7 @@ Current milestone: Phase 1 and Phase 2 are complete for the currently intended s
 - [`docs/daily-workflow-design.md`](./docs/daily-workflow-design.md) for the Daily operational design built on Schwab MCP plus Newsletter intelligence
 - [`docs/symbol-catalog-design.md`](./docs/symbol-catalog-design.md) for the DB-backed Schwab/newsletter symbol normalization layer
 - [`docs/strategy-knowledge-design.md`](./docs/strategy-knowledge-design.md) for the strategy/doctrine knowledge layer built from the Smart Spreads strategy manual
+- [`docs/claude-project-instructions-reference.md`](./docs/claude-project-instructions-reference.md) for how to migrate old Claude project instructions to the current system
 
 ## Recommendation
 
