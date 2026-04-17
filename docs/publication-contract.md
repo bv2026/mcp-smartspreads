@@ -38,6 +38,7 @@ Top-level fields:
 - `week_ended`
 - `newsletter_id`
 - `title`
+- `principle_context`
 - `source_file`
 - `watchlist`
 
@@ -72,12 +73,33 @@ Each watchlist entry includes:
 - `action`
 - `tradeable`
 - `blocked_reason`
+- `blocked_guidance`
+- `decision_summary`
+- `principle_scores`
+- `principle_status`
+- `deferred_principles`
+- `principle_evaluation_ts`
+- `evaluation_version`
 
 Key contract rules:
 
 - `watchlist` only contains live watchlist entries
 - `tradeable` and `blocked_reason` expose policy and platform constraints
+- `principle_context` is the issue-level Phase 3 screening rollup
+- per-entry principle fields expose publication-safe summaries, not raw internal reasoning
 - `entry_key` is stable across weeks so downstream systems can compare recurring ideas
+
+### `principle_context`
+
+Current Phase 3 fields:
+
+- `total_entries`
+- `evaluated_entries`
+- `tradeable_entries`
+- `blocked_by_principles`
+- `deferred_for_daily_review`
+- `selectivity_ratio`
+- `top_violations`
 
 ## `weekly_intelligence.json`
 
@@ -103,6 +125,11 @@ This file is intended for:
 - daily workflow context
 - issue comparison
 - later rules-aware reporting
+
+Phase 3 note:
+
+- `weekly_intelligence.json` now carries the published principle rollup under `published_context.principle_context`
+- richer per-entry principle detail continues to live in `watchlist.yaml`
 
 ## `issue_brief.md`
 
@@ -160,3 +187,4 @@ This allows:
 - stronger Schwab-specific watchlist shaping
 - explicit approval step before publish
 - publication diff reporting between versions
+- Phase 3 threshold and recurrence calibration based on live dry-run feedback

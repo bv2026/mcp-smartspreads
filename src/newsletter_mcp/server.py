@@ -37,6 +37,7 @@ from .database import (
     WatchlistReferenceRecord,
 )
 from .parser import parse_newsletter
+from .principle_evaluation import HistoricalContext, PrincipleEvaluationService
 
 
 PARSER_VERSION = "phase1-v1"
@@ -560,12 +561,125 @@ def _derive_entry_tradeability(entry: WatchlistEntry, legs: list[dict[str, Any]]
     return True, None
 
 
+def _combine_blocked_reasons(*reasons: str | None) -> str | None:
+    deduped: list[str] = []
+    for reason in reasons:
+        if not reason:
+            continue
+        for part in [item.strip() for item in reason.split("  ") if item.strip()]:
+            if part not in deduped:
+                deduped.append(part)
+    if not deduped:
+        return None
+    return " ".join(deduped)
+
+
+def _load_issue_principles(session: Any) -> list[StrategyPrinciple]:
+    return session.execute(
+        select(StrategyPrinciple).order_by(
+            StrategyPrinciple.priority.asc(),
+            StrategyPrinciple.principle_key.asc(),
+        )
+    ).scalars().all()
+
+
+def _evaluate_issue_entries(
+    session: Any,
+    *,
+    newsletter: Newsletter,
+    entries: list[WatchlistEntry],
+) -> None:
+    principles = _load_issue_principles(session)
+    if not principles:
+        for entry in entries:
+            legs = _parse_spread_legs(entry.spread_code)
+            policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
+            entry.tradeable = policy_tradeable
+            entry.blocked_reason = policy_blocked_reason
+            metadata = dict(entry.metadata_json or {})
+            metadata.setdefault("principle_evaluation", {})
+            entry.metadata_json = metadata
+        return
+
+    prior_entries = session.execute(
+        select(WatchlistEntry)
+        .join(Newsletter, Newsletter.id == WatchlistEntry.newsletter_id)
+        .where(Newsletter.week_ended < newsletter.week_ended)
+    ).scalars().all()
+    historical_context = HistoricalContext.build(current_entries=entries, prior_entries=prior_entries)
+
+    for entry in entries:
+        outcome = PrincipleEvaluationService.evaluate_entry(
+            entry=entry,
+            principles=principles,
+            historical_context=historical_context,
+        )
+        legs = _parse_spread_legs(entry.spread_code)
+        policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
+        metadata = dict(entry.metadata_json or {})
+        metadata["principle_evaluation"] = outcome.as_metadata()
+        entry.metadata_json = metadata
+        entry.tradeable = policy_tradeable and outcome.tradeable
+        entry.blocked_reason = _combine_blocked_reasons(
+            policy_blocked_reason,
+            outcome.blocked_reason,
+            outcome.blocked_guidance if not outcome.tradeable else None,
+        )
+
+
+def _build_principle_context(entries: list[WatchlistEntry]) -> dict[str, Any]:
+    evaluated_entries = [
+        entry for entry in entries if (entry.metadata_json or {}).get("principle_evaluation")
+    ]
+    if not evaluated_entries:
+        return {
+            "total_entries": len(entries),
+            "evaluated_entries": 0,
+            "tradeable_entries": sum(1 for entry in entries if entry.tradeable is not False),
+            "blocked_by_principles": 0,
+            "deferred_for_daily_review": 0,
+            "selectivity_ratio": 0.0,
+            "top_violations": {},
+        }
+
+    violation_counts = Counter()
+    deferred_count = 0
+    tradeable_count = 0
+    for entry in evaluated_entries:
+        evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
+        for key in evaluation.get("violations", []):
+            violation_counts[key] += 1
+        deferred_count += len(evaluation.get("deferred_principles", []))
+        if evaluation.get("tradeable") is not False:
+            tradeable_count += 1
+
+    return {
+        "total_entries": len(entries),
+        "evaluated_entries": len(evaluated_entries),
+        "tradeable_entries": tradeable_count,
+        "blocked_by_principles": len(evaluated_entries) - tradeable_count,
+        "deferred_for_daily_review": deferred_count,
+        "selectivity_ratio": round(tradeable_count / len(evaluated_entries), 4),
+        "top_violations": dict(violation_counts.most_common(5)),
+    }
+
+
 def _build_watchlist_publication_entry(
     newsletter: Newsletter,
     entry: WatchlistEntry,
 ) -> dict[str, Any]:
     legs = _parse_spread_legs(entry.spread_code)
-    tradeable, blocked_reason = _derive_entry_tradeability(entry, legs)
+    policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
+    principle_evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
+    principle_tradeable = principle_evaluation.get("tradeable")
+    tradeable = entry.tradeable if entry.tradeable is not None else (
+        policy_tradeable if principle_tradeable is None else policy_tradeable and bool(principle_tradeable)
+    )
+    blocked_reason = entry.blocked_reason or _combine_blocked_reasons(
+        policy_blocked_reason,
+        principle_evaluation.get("blocked_reason") if principle_tradeable is False else None,
+        principle_evaluation.get("blocked_guidance") if principle_tradeable is False else None,
+    )
     tos_symbols = [leg["tos_symbol"] for leg in legs if leg["tos_symbol"]]
     unique_symbols = list(dict.fromkeys(tos_symbols))
     unique_roots = list(dict.fromkeys(leg["root_code"] for leg in legs))
@@ -624,6 +738,13 @@ def _build_watchlist_publication_entry(
         "action": f"Review {entry.section_name} idea from {newsletter.week_ended.isoformat()} newsletter.",
         "tradeable": tradeable,
         "blocked_reason": blocked_reason,
+        "blocked_guidance": principle_evaluation.get("blocked_guidance"),
+        "decision_summary": principle_evaluation.get("decision_summary"),
+        "principle_scores": principle_evaluation.get("principle_scores", {}),
+        "principle_status": principle_evaluation.get("principle_status", {}),
+        "deferred_principles": principle_evaluation.get("deferred_principles", []),
+        "principle_evaluation_ts": principle_evaluation.get("evaluated_at"),
+        "evaluation_version": principle_evaluation.get("evaluation_version"),
     }
 
 
@@ -1163,6 +1284,7 @@ def _build_weekly_intelligence_payload(
         "published_context": {
             "entry_count": len(entries),
             "section_counts": brief_data.watchlist_summary.get("section_counts", {}),
+            "principle_context": _build_principle_context(entries),
         },
         "issue_brief": {
             "headline": brief_data.headline,
@@ -1366,6 +1488,8 @@ def _seed_phase1_records(session: Any, newsletter: Newsletter) -> dict[str, Any]
             entry.publication_state = "candidate"
         if entry.metadata_json is None:
             entry.metadata_json = {}
+
+    _evaluate_issue_entries(session, newsletter=newsletter, entries=list(newsletter.watchlist_entries))
 
     if newsletter.watchlist_reference is not None:
         reference = newsletter.watchlist_reference
@@ -1591,6 +1715,7 @@ def _save_parsed_newsletter(parsed) -> dict[str, Any]:
             .where(WatchlistEntry.newsletter_id == newsletter.id)
             .order_by(WatchlistEntry.id)
         ).scalars().all()
+        _evaluate_issue_entries(session, newsletter=newsletter, entries=current_entries)
         previous_newsletter = _get_previous_newsletter(session, newsletter.week_ended)
         previous_entries: list[WatchlistEntry] = []
         if previous_newsletter is not None:
@@ -2436,6 +2561,7 @@ def _serialize_watchlist_reference(reference: WatchlistReferenceRecord | None) -
 
 
 def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
+    principle_evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
     return {
         "commodity_name": entry.commodity_name,
         "spread_code": entry.spread_code,
@@ -2458,6 +2584,11 @@ def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
         "volatility_structure": entry.volatility_structure,
         "section_name": entry.section_name,
         "page_number": entry.page_number,
+        "tradeable": entry.tradeable,
+        "blocked_reason": entry.blocked_reason,
+        "principle_scores": principle_evaluation.get("principle_scores", {}),
+        "principle_status": principle_evaluation.get("principle_status", {}),
+        "decision_summary": principle_evaluation.get("decision_summary"),
     }
 
 
@@ -2915,6 +3046,7 @@ def publish_issue(
             "week_ended": newsletter.week_ended.isoformat(),
             "newsletter_id": newsletter.id,
             "title": newsletter.title,
+            "principle_context": _build_principle_context(entries),
             "source_file": newsletter.source_file,
             "watchlist": [
                 _build_watchlist_publication_entry(newsletter, entry)
@@ -2972,7 +3104,18 @@ def publish_issue(
             )
 
         for entry in entries:
-            entry.tradeable, entry.blocked_reason = _derive_entry_tradeability(entry, _parse_spread_legs(entry.spread_code))
+            legs = _parse_spread_legs(entry.spread_code)
+            policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
+            principle_evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
+            principle_tradeable = principle_evaluation.get("tradeable")
+            entry.tradeable = (
+                policy_tradeable if principle_tradeable is None else policy_tradeable and bool(principle_tradeable)
+            )
+            entry.blocked_reason = _combine_blocked_reasons(
+                policy_blocked_reason,
+                principle_evaluation.get("blocked_reason") if principle_tradeable is False else None,
+                principle_evaluation.get("blocked_guidance") if principle_tradeable is False else None,
+            )
             entry.publication_state = "published"
 
         newsletter.issue_status = "published"

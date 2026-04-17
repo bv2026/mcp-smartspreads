@@ -20,6 +20,7 @@ Current milestone: Phase 1 and Phase 2 are complete for the currently intended s
 - [`docs/daily-workflow-design.md`](./docs/daily-workflow-design.md) for the Daily operational design built on Schwab MCP plus Newsletter intelligence
 - [`docs/symbol-catalog-design.md`](./docs/symbol-catalog-design.md) for the DB-backed Schwab/newsletter symbol normalization layer
 - [`docs/strategy-knowledge-design.md`](./docs/strategy-knowledge-design.md) for the strategy/doctrine knowledge layer built from the Smart Spreads strategy manual
+- [`docs/phase3-principle-integration-design.md`](./docs/phase3-principle-integration-design.md) for the Phase 3 principle-evaluation, publication, and Daily integration design
 - [`docs/claude-project-instructions-reference.md`](./docs/claude-project-instructions-reference.md) for how to migrate old Claude project instructions to the current system
 
 ## Recommendation

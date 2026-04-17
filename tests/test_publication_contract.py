@@ -16,6 +16,8 @@ from newsletter_mcp.database import (
     PublicationArtifact,
     PublicationRun,
     SchwabFuturesCatalog,
+    StrategyDocument,
+    StrategyPrinciple,
     WatchlistEntry,
 )
 from newsletter_mcp.models import ParsedNewsletter, SectionSummary, WatchlistReference, WatchlistRow
@@ -110,9 +112,41 @@ class PublicationContractTests(unittest.TestCase):
         self.database_patch = mock.patch.object(server, "database", self.database)
         self.database_patch.start()
         self.addCleanup(self.database_patch.stop)
+        self._seed_strategy_principles()
 
         parsed = _make_parsed_newsletter(self.base_dir)
         server._save_parsed_newsletter(parsed)
+
+    def _seed_strategy_principles(self) -> None:
+        with self.database.session() as session:
+            document = StrategyDocument(
+                title="Trading Commodity Spreads",
+                source_file=str(self.base_dir / "strategy.pdf"),
+                file_hash="strategy-hash",
+                document_type="strategy_manual",
+                raw_text="manual",
+                summary_text="summary",
+                metadata_json={},
+            )
+            session.add(document)
+            session.flush()
+            for seed in server.STRATEGY_PRINCIPLE_SEED:
+                session.add(
+                    StrategyPrinciple(
+                        strategy_document_id=document.id,
+                        strategy_section_id=None,
+                        principle_key=seed["principle_key"],
+                        principle_title=seed["principle_title"],
+                        category=seed["category"],
+                        priority=seed["priority"],
+                        summary_text=seed["summary_text"],
+                        guidance_text=seed["guidance_text"],
+                        applies_to_json=seed.get("applies_to", []),
+                        examples_json=[],
+                        anti_patterns_json=seed.get("anti_patterns", []),
+                        metadata_json={"threshold": 0.75},
+                    )
+                )
 
     def test_publish_issue_writes_contract_files_and_db_records(self) -> None:
         output_dir = self.base_dir / "published"
@@ -132,9 +166,12 @@ class PublicationContractTests(unittest.TestCase):
 
         watchlist_payload = json.loads((output_dir / "watchlist.yaml").read_text(encoding="utf-8"))
         self.assertEqual(watchlist_payload["schema_version"], server.PUBLICATION_SCHEMA_VERSION)
+        self.assertIn("principle_context", watchlist_payload)
         self.assertEqual(len(watchlist_payload["watchlist"]), 2)
         self.assertEqual(watchlist_payload["watchlist"][0]["type"], "calendar")
         self.assertEqual(watchlist_payload["watchlist"][0]["tradeable"], True)
+        self.assertIn("principle_scores", watchlist_payload["watchlist"][0])
+        self.assertIn("principle_status", watchlist_payload["watchlist"][0])
         self.assertEqual(watchlist_payload["watchlist"][1]["tradeable"], False)
         self.assertIn("Sugar #11 is not tradeable", watchlist_payload["watchlist"][1]["blocked_reason"])
 

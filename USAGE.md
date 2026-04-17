@@ -153,6 +153,8 @@ Recommended Sunday sequence:
    Review `get_issue_summary(...)`, `get_watchlist(...)`, and `get_watchlist_reference(...)`.
 3. `newsletter-mcp`
    Run `publish_issue(...)` for the approved week.
+   Phase 3 note:
+   the published contract now includes `principle_context` at the top level and per-entry principle fields such as `principle_scores`, `principle_status`, `decision_summary`, and `deferred_principles`.
 4. `newsletter-mcp`
    Generate any CSV/package exports needed for review.
 5. `schwab-smartspreads-file`
@@ -182,6 +184,7 @@ Recommended Daily sequence:
     - current-issue matches where the open spread is still in the latest watchlist
     - legacy-carryover matches from older newsletters when the spread is no longer in the current issue
     - quantity-aware matching for butterfly structures
+    - Phase 3 publication context showing which weekly ideas were screened, blocked, or deferred for Daily review
 6. Claude combines both sources into:
    - morning brief
    - action plan
@@ -194,10 +197,24 @@ Known Daily limitations:
 - VIX-family contracts are valid but are treated as manual-leg workflow items, not native spread entries.
 - `/MWE` currently remains a known no-tick / unsupported operational case.
 - If a position truly has no newsletter-history match, its exit date will remain `Unknown` until a manual fallback is introduced.
+- Phase 3 principle thresholds are now live in the weekly publication, but they still need ongoing calibration against real historical recurrence and operator judgment.
 
 Suggested Daily ask:
 
 ```text
 Use schwab-smartspreads-file first to get today's futures positions and watchlist pricing, then use newsletter-mcp get_daily_exit_schedule on that positions result. I have already overwritten the canonical TOS statement CSV and TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning brief using the current published newsletter week, my imported futures positions, current watchlist pricing, newsletter-history-backed exit dates, and the rules that matter for interpreting today's setups. Treat valid-but-manual-leg symbols separately from normal native spread entries.
 ```
+
+## Testing
+
+Run the full local test suite with:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Phase 3 coverage now includes:
+
+- `tests/test_principle_evaluation.py`
+- `tests/test_publication_contract.py`
 

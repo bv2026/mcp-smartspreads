@@ -21,6 +21,7 @@ class WatchlistSummaryDraft:
     top_categories: list[dict[str, Any]]
     top_classifications: list[dict[str, Any]]
     blocked_examples: list[dict[str, Any]]
+    principle_context: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +38,7 @@ class WatchlistSummaryDraft:
             "top_categories": self.top_categories,
             "top_classifications": self.top_classifications,
             "blocked_examples": self.blocked_examples,
+            "principle_context": self.principle_context,
         }
 
 
@@ -87,6 +89,20 @@ class IssueBriefService:
             for row in rows
             if getattr(row, "tradeable", None) is False
         ][:3]
+        principle_violations = Counter()
+        deferred_count = 0
+        evaluated_count = 0
+        principle_blocked_count = 0
+        for row in rows:
+            principle_eval = getattr(row, "metadata_json", {}).get("principle_evaluation", {})
+            if not principle_eval:
+                continue
+            evaluated_count += 1
+            for violation in principle_eval.get("violations", []):
+                principle_violations[violation] += 1
+            deferred_count += len(principle_eval.get("deferred_principles", []))
+            if principle_eval.get("tradeable") is False:
+                principle_blocked_count += 1
 
         def _dominant(counter: Counter) -> dict[str, Any] | None:
             if not counter:
@@ -114,6 +130,17 @@ class IssueBriefService:
             top_categories=_rank(category_counts),
             top_classifications=_rank(classification_counts),
             blocked_examples=blocked_examples,
+            principle_context={
+                "evaluated_entry_count": evaluated_count,
+                "principle_blocked_count": principle_blocked_count,
+                "deferred_principles_count": deferred_count,
+                "selectivity_ratio": (
+                    round((entry_count - principle_blocked_count) / entry_count, 4)
+                    if (entry_count := len(rows))
+                    else 0.0
+                ),
+                "top_violations": dict(principle_violations.most_common(5)),
+            },
         )
 
     @staticmethod
@@ -248,6 +275,13 @@ class IssueBriefService:
             themes.append(
                 f"{dominant_volatility['label']} volatility structures lead the book with {dominant_volatility['count']} setups."
             )
+        principle_context = watchlist_summary.get("principle_context", {})
+        if principle_context.get("evaluated_entry_count"):
+            blocked_count = principle_context.get("principle_blocked_count", 0)
+            ratio = principle_context.get("selectivity_ratio", 0.0)
+            themes.append(
+                f"Principle evaluation screened the issue to a {ratio:.0%} selectivity ratio with {blocked_count} blocked setups."
+            )
         return themes[:5]
 
     @staticmethod
@@ -258,6 +292,14 @@ class IssueBriefService:
             sample = blocked[0]
             reason = getattr(sample, "blocked_reason", None) or "Policy or platform restrictions apply."
             risks.append(f"{len(blocked)} setups are currently blocked. Example: {sample.commodity_name} - {reason}")
+        principle_violations = Counter()
+        for row in entries:
+            principle_eval = getattr(row, "metadata_json", {}).get("principle_evaluation", {})
+            for violation in principle_eval.get("violations", []):
+                principle_violations[violation] += 1
+        if principle_violations:
+            top_key, top_count = principle_violations.most_common(1)[0]
+            risks.append(f"{top_count} setups were screened by the {top_key} principle.")
         low_ridx = [row for row in entries if getattr(row, "ridx", 0) < 30]
         if low_ridx:
             risks.append(f"{len(low_ridx)} setups are below the RIDX threshold of 30.")
