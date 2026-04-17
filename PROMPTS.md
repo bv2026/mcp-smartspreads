@@ -2,6 +2,14 @@
 
 This file provides suggested prompts for using the newsletter MCP consistently.
 
+## Quiet mode prefix
+
+Use this at the top of any Claude prompt when you want a cleaner final answer without tool chatter:
+
+```text
+Use only the needed MCP tools. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+```
+
 ## Ingestion prompts
 
 ### Ingest all pending newsletters

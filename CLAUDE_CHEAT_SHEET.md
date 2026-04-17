@@ -20,6 +20,14 @@ Use this when you want fast, reliable prompts for:
 - Use the strategy layer when you want "why this matters" instead of just "what the newsletter says."
 - When Claude gets noisy, add: `Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.`
 
+### Quiet mode prefix
+
+Paste this at the top of any Claude prompt when you want a cleaner answer:
+
+```text
+Use only the needed MCP tools. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+```
+
 ---
 
 ## Sunday workflow
@@ -178,6 +186,7 @@ Use newsletter-mcp list_strategy_principles and get_issue_summary for 2026-04-10
 - Say `Keep it concise` when you want a compact answer.
 - Say `Do not search past conversations` when the DB/history should be the source of truth.
 - Say `Do not show tool discovery, function schemas, internal steps, or MCP details` when Claude starts dumping tool chatter.
+- Use the quiet mode prefix when you want to suppress tool chatter across any workflow.
 - Say `Use schwab-smartspreads-file first` when the Daily workflow depends on current positions/pricing.
 - Say `Use newsletter-mcp only` when you want historical/intelligence answers without Daily operational data.
 
