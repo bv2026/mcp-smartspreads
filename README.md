@@ -172,3 +172,11 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 - Schwab MCP remains contract-based only in v1. Daily logic should read the published context, not write into Newsletter tables.
 - Daily continuity is now started in the Newsletter business layer so the dry run can detect where current portfolio fit weakens a Sunday-approved idea.
 - Threshold calibration is still active work. Before trusting a new week operationally, review the Sunday screening counts and blocked examples after publication.
+
+## Current Pause Point
+
+The repo is now at a good observation checkpoint:
+
+- Sunday and Daily Phase 3 flows are working end to end
+- the next recommended step is to run the next newsletter cycle, collect metrics, and then add the first Daily persistence layer
+- the current leading persistence candidate is `portfolio_fit_reviews`

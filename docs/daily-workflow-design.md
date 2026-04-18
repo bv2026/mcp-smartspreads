@@ -443,6 +443,36 @@ Current known gap:
 - if an open position truly has no newsletter-history match, the report still shows `Unknown` and a manual fallback field has not yet been introduced
 - Daily continuity is currently report-oriented and not yet persisted as its own artifact or table
 
+## Immediate Plan And Pending TODO
+
+Recommended near-term plan:
+
+1. use the current Sunday and Daily flow operationally on the next newsletter cycle
+2. gather real metrics on:
+   - Sunday pass / block / defer counts
+   - Daily downgrades from portfolio overlap
+   - stale/no-tick limitations
+   - Sunday-blocked ideas that still appear in the portfolio
+3. defer broader Daily persistence until those observations are in hand
+
+Recommended first Daily persistence target:
+
+- `portfolio_fit_reviews`
+
+This should capture:
+
+- the Sunday outcome for an idea
+- whether Daily portfolio fit passed, failed, or was already holding
+- which current position conflicted
+- what the operator decided
+
+Current pending TODOs:
+
+- move Daily continuity from report-only output into persisted review records
+- make portfolio-fit review a clearer Daily gate instead of only a dry-run explanation
+- preserve operator intent when an idea is entered despite Sunday blocking
+- keep Schwab MCP contract-based only; do not introduce shared DB writes
+
 ### Step 4
 
 Only after the workflow is trusted, decide what daily artifacts should be persisted in Phase 2.

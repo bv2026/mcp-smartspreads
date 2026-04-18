@@ -518,3 +518,47 @@ For the next weekly issue, especially the April 24, 2026 newsletter:
 5. rerun the dry run after publication and confirm the report mirrors the published counts and influence tags
 
 If the new issue suddenly collapses to a very low tradeable count, that is a signal to review thresholds and intelligence adjustments before treating the output as final doctrine.
+
+## Pause Point And Next Plan
+
+This is the current recommended stopping point before the next implementation wave.
+
+What is working now:
+
+- Sunday ingest, scoring, publication, and Schwab-side contract reading are working end to end
+- Weekly Intelligence is materially affecting Sunday scoring
+- Daily continuity is working in the business layer and dry run
+- Sunday-to-Daily drift is now visible for portfolio-fit conflicts
+- the current system is ready for live observation on the next Sunday and Daily runs
+
+What we should do before adding more persistence:
+
+1. run the full Sunday workflow on the next newsletter issue
+2. run multiple Daily sessions against that published issue
+3. collect calibration metrics from real use
+4. confirm which gaps are operationally painful versus merely architecturally incomplete
+
+Recommended first persistence target after observation:
+
+- `portfolio_fit_reviews`
+
+Why this is first:
+
+- it answers why a Sunday-blocked idea appears in the portfolio anyway
+- it answers why a Sunday-approved idea was skipped or downgraded in Daily review
+- it captures operator intent without requiring full Daily run persistence yet
+
+Recommended next implementation order after Apr 22:
+
+1. design and add `portfolio_fit_reviews`
+2. wire Daily continuity output into that table
+3. support operator decision updates such as `skip`, `enter_anyway`, and `already_entered`
+4. only then decide whether broader Daily persistence is still necessary
+
+Current pending TODOs:
+
+- calibrate `volatility_as_constraint`, which currently appears too aggressive
+- formalize Daily `portfolio_fit_over_isolated_trade_appeal` as a clearer gate beyond dry-run reporting
+- investigate Sunday-blocked ideas that still appear in live positions, especially Gold
+- shift publication gradually toward `watchlist_decisions` as the source of truth
+- add override support once the first Daily persistence layer exists
