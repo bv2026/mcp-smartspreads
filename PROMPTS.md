@@ -138,6 +138,44 @@ and tell me where the files were written.
 Use newsletter-mcp first, then schwab-smartspreads-file. Republish the latest newsletter issue, confirm the published watchlist metadata, then verify the file-based Schwab MCP can see the published week and use that watchlist for live monitoring.
 ```
 
+### Sunday E2E metrics check
+
+```text
+Run the full Sunday SmartSpreads workflow for the newest newsletter issue.
+
+I want:
+- ingest
+- issue summary review
+- watchlist review
+- reference-rule review
+- publish or refresh-publish
+- a short validation summary
+
+Please report:
+- total entries
+- tradeable count
+- blocked count
+- deferred count
+- selectivity ratio
+- top blocking principles
+- 3 example entries showing Weekly Intelligence influence
+- anything that looks miscalibrated
+```
+
+### Sunday trust check
+
+```text
+Review the published Sunday result and tell me whether I should trust it operationally.
+
+Please focus on:
+- blocked ideas that may be false negatives
+- passes that may be too generous
+- whether Weekly Intelligence seems meaningfully used
+- whether the selectivity looks sane for this issue
+
+Keep the answer short and practical.
+```
+
 ## Daily workflow prompts
 
 Use these on trading days after the Sunday publication step is complete.
@@ -215,6 +253,78 @@ Keep it concise.
 ```text
 Use schwab-smartspreads-live and schwab-smartspreads-file. Compare the original live Schwab MCP workflow with the file-based published-watchlist workflow and tell me whether the file-based version is using the expected published issue and watchlist rows.
 ```
+
+### Daily E2E run
+
+```text
+Run the Daily SmartSpreads workflow using the current published week and current Schwab/TOS inputs.
+
+I want:
+- run status
+- watchlist conflicts
+- Daily continuity from Sunday
+- Sunday passes that now need Daily override
+- top 3 actions for today
+
+Please explicitly call out:
+- any Sunday-approved ideas degraded by portfolio overlap
+- any still-ready Sunday-approved ideas
+- any blocked ideas I should ignore
+```
+
+### Daily metrics check
+
+```text
+Give me simple Daily metrics from the current run.
+
+Please report:
+- Sunday passes still ready
+- Sunday passes degraded by Daily review
+- Sunday blocked ideas still blocked
+- overlap-driven overrides
+- manual-leg limitations
+- no-tick limitations
+
+Then give a 1-paragraph assessment of whether the Daily bridge looks useful.
+```
+
+### Calibration check
+
+```text
+Based on the current Sunday and Daily outputs, what looks most miscalibrated?
+
+Please identify:
+- the principle most likely over-blocking
+- the principle most likely under-informing Daily review
+- 2 concrete adjustments you would test next
+
+Do not redesign the system. Just focus on calibration.
+```
+
+### Persistence readiness
+
+```text
+Based on the Sunday and Daily runs we just observed, what should we persist first?
+
+Please choose between:
+- Daily continuity runs
+- operator overrides
+- published decision snapshots
+- portfolio-fit review records
+
+Then explain why in a few sentences.
+```
+
+## Weekend runbook
+
+Use these in order for the cleanest Phase 3 testing loop:
+
+1. run the Sunday E2E metrics check
+2. run the Sunday trust check
+3. run the Daily E2E run
+4. run the Daily metrics check
+5. run the calibration check
+6. run the persistence readiness check
 
 ## Prompting guidance
 
