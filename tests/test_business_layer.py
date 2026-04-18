@@ -11,7 +11,7 @@ from unittest import mock
 from sqlalchemy import select
 
 from newsletter_mcp import server
-from newsletter_mcp.business import IssueBriefService
+from newsletter_mcp.business import DailyContinuityService, IssueBriefService
 from newsletter_mcp.database import Database, IssueBrief
 from newsletter_mcp.models import ParsedNewsletter, SectionSummary, WatchlistReference, WatchlistRow
 
@@ -204,6 +204,92 @@ class IssueBriefServiceTests(unittest.TestCase):
         self.assertIn("volatility_counts", summary["issue_brief"]["watchlist_summary"])
         self.assertIn("issue_delta", summary)
         self.assertIn("watchlist_reference", summary)
+
+
+class DailyContinuityServiceTests(unittest.TestCase):
+    def test_resolve_entry_degrades_sunday_pass_on_portfolio_overlap(self) -> None:
+        entry = {
+            "spread_code": "VXN26-VXU26",
+            "legs": ["/VXMN26", "/VXMU26"],
+            "tradeable": True,
+            "manual_legs_required": True,
+            "deferred_principles": [
+                "margin_as_survivability_constraint",
+                "portfolio_fit_over_isolated_trade_appeal",
+            ],
+            "principle_influences": {
+                "structure_before_conviction": [
+                    "weekly_intelligence.opportunity_signal",
+                    "issue_delta.new_this_week",
+                ],
+                "volatility_as_constraint": ["weekly_intelligence.volatility_emphasis"],
+            },
+        }
+
+        decision = DailyContinuityService.resolve_entry(
+            entry,
+            open_leg_symbols={"/VXMN26", "/VXMU26"},
+            dead_symbols={"/VXMN26", "/VXMU26"},
+        )
+
+        self.assertEqual(decision.daily_state, "degraded")
+        self.assertEqual(decision.drift, "weaker_than_sunday")
+        self.assertEqual(decision.portfolio_fit, "fail")
+        self.assertIn("/VXMN26", decision.overlap)
+        self.assertTrue(any("downgraded" in note.lower() for note in decision.notes))
+
+    def test_analyze_watchlist_summarizes_ready_blocked_and_degraded(self) -> None:
+        watchlist = [
+            {
+                "spread_code": "LCG27-LHG27",
+                "legs": ["/LEG27", "/HEG27"],
+                "tradeable": True,
+                "manual_legs_required": False,
+                "deferred_principles": [
+                    "margin_as_survivability_constraint",
+                    "portfolio_fit_over_isolated_trade_appeal",
+                ],
+                "principle_influences": {
+                    "selectivity_not_participation": ["weekly_intelligence.opportunity_signal"],
+                    "intercommodity_conditional_edge": ["watchlist_reference.rule_context"],
+                },
+            },
+            {
+                "spread_code": "SU26-SF27",
+                "legs": ["/ZSU26", "/ZSF27"],
+                "tradeable": True,
+                "manual_legs_required": False,
+                "deferred_principles": [
+                    "margin_as_survivability_constraint",
+                    "portfolio_fit_over_isolated_trade_appeal",
+                ],
+                "principle_influences": {
+                    "selectivity_not_participation": ["weekly_intelligence.opportunity_signal"],
+                },
+            },
+            {
+                "spread_code": "GCQ26-GCZ26",
+                "legs": ["/GCQ26", "/GCZ26"],
+                "tradeable": False,
+                "manual_legs_required": False,
+                "deferred_principles": [
+                    "margin_as_survivability_constraint",
+                    "portfolio_fit_over_isolated_trade_appeal",
+                ],
+                "principle_influences": {},
+            },
+        ]
+
+        decisions = DailyContinuityService.analyze_watchlist(
+            watchlist,
+            open_leg_symbols={"/ZSU26", "/ZSF27"},
+            dead_symbols=set(),
+        )
+        summary = DailyContinuityService.summarize(decisions)
+
+        self.assertEqual(summary["ready"], 1)
+        self.assertEqual(summary["degraded"], 1)
+        self.assertEqual(summary["blocked"], 1)
 
 
 if __name__ == "__main__":

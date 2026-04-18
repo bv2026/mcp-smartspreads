@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from schwab_mcp.tos_parser import parse_futures_ytd_pl, parse_tos_futures  # noqa: E402
 from newsletter_mcp import server as newsletter_server  # noqa: E402
+from newsletter_mcp.business import DailyContinuityService  # noqa: E402
 
 
 ROOT_NAMES = {
@@ -278,6 +279,53 @@ def _intelligence_influenced_entries(watchlist: list[dict[str, Any]]) -> list[di
     return influenced
 
 
+def _build_daily_resolution_section(
+    watchlist: list[dict[str, Any]],
+    *,
+    open_leg_symbols: set[str],
+    dead_symbols: set[str],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    resolved_decisions = DailyContinuityService.analyze_watchlist(
+        watchlist,
+        open_leg_symbols=open_leg_symbols,
+        dead_symbols=dead_symbols,
+    )
+    resolved = [decision.as_dict() for decision in resolved_decisions]
+    counts = DailyContinuityService.summarize(resolved_decisions)
+
+    lines = [
+        "## DAILY CONTINUITY FROM SUNDAY",
+        "",
+        f"- Ready after Daily review: `{counts.get('ready', 0)}`",
+        f"- Degraded vs Sunday baseline: `{counts.get('degraded', 0)}`",
+        f"- Still blocked from Sunday baseline: `{counts.get('blocked', 0)}`",
+        "",
+        "### Sunday Passes That Need Daily Override",
+        "",
+    ]
+    degraded = [item for item in resolved if item["daily_state"] == "degraded"]
+    if degraded:
+        for item in degraded[:5]:
+            lines.append(
+                f"- `{item['spread_code']}` downgraded: {' '.join(item['notes'])}"
+            )
+    else:
+        lines.append("- No Sunday-passing entries were downgraded by current Daily portfolio fit.")
+    lines.append("")
+    lines.append("### Daily Continuity Notes")
+    lines.append("")
+    ready = [item for item in resolved if item["daily_state"] == "ready"]
+    for item in ready[:3]:
+        if item["notes"]:
+            lines.append(f"- `{item['spread_code']}`: {' '.join(item['notes'])}")
+    if not any(item["notes"] for item in ready[:3]):
+        lines.append("- No additional Daily continuity notes were generated.")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    return lines, resolved
+
+
 def _build_principle_section(
     *,
     watchlist_doc: dict[str, Any],
@@ -405,13 +453,19 @@ def main() -> None:
             spread.alignment_status = resolved.get("alignment_status", "unmatched")
     configured_spread_count = len(positions_doc.get("positions", []))
 
-    watchlist_lines, enriched_watchlist = _build_watchlist_rows(watchlist_doc["watchlist"], mark_lookup, open_leg_symbols)
+    all_watchlist = watchlist_doc["watchlist"]
+    watchlist_lines, enriched_watchlist = _build_watchlist_rows(all_watchlist, mark_lookup, open_leg_symbols)
     conflicts = _find_watchlist_conflicts(watchlist_doc["watchlist"], open_leg_symbols)
     dead_symbols = _load_latest_dead_symbols()
     principle_section_lines = _build_principle_section(
         watchlist_doc=watchlist_doc,
-        watchlist=enriched_watchlist,
+        watchlist=all_watchlist,
         open_leg_symbols=open_leg_symbols,
+    )
+    daily_resolution_lines, daily_resolution = _build_daily_resolution_section(
+        all_watchlist,
+        open_leg_symbols=open_leg_symbols,
+        dead_symbols=set(dead_symbols),
     )
 
     statement_mtime = datetime.fromtimestamp(TOS_CSV_PATH.stat().st_mtime)
@@ -440,6 +494,7 @@ def main() -> None:
     lines.append("---")
     lines.append("")
     lines.extend(principle_section_lines)
+    lines.extend(daily_resolution_lines)
     lines.append("## COMPLETE INTRA-COMMODITY WATCHLIST - Dry-Run Spread Values")
     lines.append(f"**{report_date.strftime('%A, %B %d, %Y')}**")
     lines.append("")
@@ -584,8 +639,9 @@ def main() -> None:
     lines.append("")
     lines.append("## NEXT ACTIONS")
     lines.append("")
-    high_conviction = _high_conviction_entries(enriched_watchlist)
-    deferred_entries = _deferred_entries(enriched_watchlist)
+    high_conviction = _high_conviction_entries(all_watchlist)
+    deferred_entries = _deferred_entries(all_watchlist)
+    degraded_entries = [item for item in daily_resolution if item["daily_state"] == "degraded"]
     urgent_spreads = [
         spread for spread in spread_summaries if spread.urgency_bucket in {"overdue", "due_today", "due_this_week"}
     ]
@@ -601,7 +657,13 @@ def main() -> None:
         lines.append(f"2. Do not enter conflicting watchlist ideas: {', '.join(item['spread_code'] for item in conflicts)}.")
     else:
         lines.append("2. No direct watchlist leg-overlap conflicts were detected in the dry run.")
-    if deferred_entries:
+    if degraded_entries:
+        lines.append(
+            "3. Override these Sunday passes first based on Daily portfolio fit: "
+            + ", ".join(item["spread_code"] for item in degraded_entries[:3])
+            + "."
+        )
+    elif deferred_entries:
         lines.append(
             "3. Resolve Daily deferred principle checks first: "
             + ", ".join(entry["spread_code"] for entry in deferred_entries[:3])
@@ -647,6 +709,7 @@ def main() -> None:
         "- The generated report includes the same major workflow sections: watchlist values, imported positions, spread calculations, position changes, conflicts, exit schedule, portfolio summary, portfolio status, and next actions.",
         "- The generated report now surfaces VIX manual-leg support limits explicitly, which is an improvement over treating those as unexplained dead symbols.",
         "- The generated report now includes weekly principle context, blocked ideas, and deferred Daily review items from the published Phase 3 contract.",
+        "- The generated report now shows Daily continuity and where current portfolio fit weakens a Sunday-approved idea without requiring shared DB writes.",
         "",
         "## Discrepancies",
         "",

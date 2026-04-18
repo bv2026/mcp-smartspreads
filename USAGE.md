@@ -212,7 +212,7 @@ Known Daily limitations:
 - `/MWE` currently remains a known no-tick / unsupported operational case.
 - If a position truly has no newsletter-history match, its exit date will remain `Unknown` until a manual fallback is introduced.
 - Phase 3 principle thresholds are now live in the weekly publication, but they still need ongoing calibration against real historical recurrence and operator judgment.
-- Daily workflow does not yet re-score using Sunday intelligence context. For now, treat Sunday `principle_influences` as review context, not as a full Daily decision engine.
+- Daily workflow now uses Sunday publication context to flag continuity and portfolio-fit drift in the dry run, but it is still not a full persisted Daily decision engine.
 
 Suggested Daily ask:
 
@@ -249,4 +249,5 @@ Before the April 24, 2026 newsletter weekend cycle:
 6. spot-check a few entries for non-empty `principle_influences` so you know Weekly Intelligence was actually used
 7. treat unusually low tradeable counts as a calibration warning, not automatically as truth
 8. rerun the dry run after publication and confirm the report matches the contract counts
+9. during Daily review, check whether any Sunday-approved ideas are being downgraded by current portfolio overlap before treating them as candidates
 

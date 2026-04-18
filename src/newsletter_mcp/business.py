@@ -53,6 +53,126 @@ class IssueBriefDraft:
     change_summary: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class DailyContinuityDecision:
+    spread_code: str
+    daily_state: str
+    drift: str
+    portfolio_fit: str
+    margin_status: str
+    overlap: list[str]
+    notes: list[str]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "spread_code": self.spread_code,
+            "daily_state": self.daily_state,
+            "drift": self.drift,
+            "portfolio_fit": self.portfolio_fit,
+            "margin_status": self.margin_status,
+            "overlap": self.overlap,
+            "notes": self.notes,
+        }
+
+
+class DailyContinuityService:
+    """Resolve Daily continuity from the published Sunday contract plus live position context."""
+
+    @staticmethod
+    def analyze_watchlist(
+        watchlist: list[dict[str, Any]],
+        *,
+        open_leg_symbols: set[str],
+        dead_symbols: set[str],
+    ) -> list[DailyContinuityDecision]:
+        return [
+            DailyContinuityService.resolve_entry(
+                entry,
+                open_leg_symbols=open_leg_symbols,
+                dead_symbols=dead_symbols,
+            )
+            for entry in watchlist
+        ]
+
+    @staticmethod
+    def summarize(decisions: list[DailyContinuityDecision]) -> dict[str, int]:
+        counts = Counter(decision.daily_state for decision in decisions)
+        return {
+            "ready": counts.get("ready", 0),
+            "degraded": counts.get("degraded", 0),
+            "blocked": counts.get("blocked", 0),
+        }
+
+    @staticmethod
+    def resolve_entry(
+        entry: dict[str, Any],
+        *,
+        open_leg_symbols: set[str],
+        dead_symbols: set[str],
+    ) -> DailyContinuityDecision:
+        overlap = sorted(set(entry.get("legs", [])) & open_leg_symbols)
+        deferred = set(entry.get("deferred_principles", []))
+        influence_tags = DailyContinuityService._flatten_influence_tags(entry)
+        notes: list[str] = []
+
+        portfolio_fit = "not_applicable"
+        if "portfolio_fit_over_isolated_trade_appeal" in deferred:
+            portfolio_fit = "fail" if overlap else "pass"
+            if overlap:
+                notes.append(f"Portfolio-fit conflict: {', '.join(overlap)} already overlaps with open positions.")
+            else:
+                notes.append("Portfolio fit cleared: no direct open-leg overlap was found.")
+
+        margin_status = "not_applicable"
+        if "margin_as_survivability_constraint" in deferred:
+            margin_status = "review"
+            if entry.get("manual_legs_required"):
+                notes.append("Margin survivability still needs manual-leg review.")
+            elif sorted(set(entry.get("legs", [])) & dead_symbols):
+                notes.append("Margin survivability confidence is limited because one or more legs have no live ticks.")
+            else:
+                notes.append("Margin survivability still needs explicit account-level review.")
+
+        sunday_tradeable = entry.get("tradeable", True)
+        if not sunday_tradeable:
+            daily_state = "blocked"
+            drift = "confirmed_blocked"
+        elif portfolio_fit == "fail":
+            daily_state = "degraded"
+            drift = "weaker_than_sunday"
+        else:
+            daily_state = "ready"
+            drift = "confirmed_ready"
+
+        if "weekly_intelligence.opportunity_signal" in influence_tags:
+            if daily_state == "degraded":
+                notes.append("A Sunday opportunity signal is being downgraded by current portfolio fit.")
+            else:
+                notes.append("Sunday opportunity signal still aligns with current Daily context.")
+        if "weekly_intelligence.risk_signal" in influence_tags:
+            notes.append("Sunday risk signal remains active in Daily review.")
+        if "watchlist_reference.rule_context" in influence_tags:
+            notes.append("Reference-rule context still matters for this Daily review.")
+
+        return DailyContinuityDecision(
+            spread_code=entry["spread_code"],
+            daily_state=daily_state,
+            drift=drift,
+            portfolio_fit=portfolio_fit,
+            margin_status=margin_status,
+            overlap=overlap,
+            notes=notes,
+        )
+
+    @staticmethod
+    def _flatten_influence_tags(entry: dict[str, Any]) -> set[str]:
+        tags: set[str] = set()
+        for values in (entry.get("principle_influences") or {}).values():
+            for value in values:
+                tags.add(value)
+        return tags
+
+
 class IssueBriefService:
     """Build business-layer issue briefs from normalized newsletter records."""
 

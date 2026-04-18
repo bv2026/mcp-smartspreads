@@ -170,4 +170,5 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 - Sunday scoring is now influenced by stored Weekly Intelligence context derived from the issue brief, issue delta, and watchlist reference.
 - The current published contract includes `principle_influences` and `intelligence_context` per entry so downstream review can validate why a setup passed, blocked, or deferred.
 - Schwab MCP remains contract-based only in v1. Daily logic should read the published context, not write into Newsletter tables.
+- Daily continuity is now started in the Newsletter business layer so the dry run can detect where current portfolio fit weakens a Sunday-approved idea.
 - Threshold calibration is still active work. Before trusting a new week operationally, review the Sunday screening counts and blocked examples after publication.

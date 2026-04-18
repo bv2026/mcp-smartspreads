@@ -88,6 +88,7 @@ This design intentionally avoids:
 - weekly themes, risks, and opportunities
 - published weekly contract
 - exit-date interpretation and newsletter context
+- Daily continuity analysis that consumes the published Sunday contract without taking over Schwab-side live calculations
 
 ### Claude owns
 
@@ -174,6 +175,7 @@ Action priority should consider:
 - watchlist conflicts
 - high-conviction current opportunities
 - blocked ideas that should be ignored
+- Sunday-approved ideas that now weaken under Daily portfolio fit
 - stale or weak data-quality conditions
 
 ### Step 8. Render the daily markdown report
@@ -228,6 +230,7 @@ The current Claude-generated markdown should be treated as the seed contract and
    - major risks
    - notable opportunities
    - important interpretation rules
+   - Daily continuity from the Sunday baseline when relevant
 
 8. `Portfolio summary`
    - high-level operational picture
@@ -238,6 +241,7 @@ The current Claude-generated markdown should be treated as the seed contract and
    - exit-driven actions
    - monitoring actions
    - ignore/hold actions where relevant
+   - Daily overrides where current portfolio fit weakens a Sunday-approved setup
 
 ## Action-plan contract
 
@@ -431,9 +435,13 @@ The current Daily dry-run implementation now supports:
 - newsletter-history-backed exit resolution for calendars and butterflies
 - broker-root-aware symbol matching using the commodity and Schwab symbol catalogs
 - legacy-carryover detection for positions that are no longer in the current issue but still exist in historical newsletters
+- reuse of Sunday `principle_influences`, `intelligence_context`, and deferred-principle context from `watchlist.yaml`
+- Daily continuity analysis through the Newsletter business layer
+- reporting of Daily drift from the Sunday baseline without shared DB writes
 
 Current known gap:
 - if an open position truly has no newsletter-history match, the report still shows `Unknown` and a manual fallback field has not yet been introduced
+- Daily continuity is currently report-oriented and not yet persisted as its own artifact or table
 
 ### Step 4
 
@@ -463,7 +471,7 @@ From schwab-smartspreads-file:
 From newsletter-mcp:
  - use get_daily_exit_schedule with the Schwab futures-positions result
  - get the current issue summary
- - use the stored issue brief, watchlist rules, issue delta, and newsletter-aligned exit dates
+ - use the stored issue brief, watchlist rules, issue delta, newsletter-aligned exit dates, and Sunday principle context
 
 Then produce today's daily markdown report and action plan. Include:
 - run status
@@ -473,6 +481,7 @@ Then produce today's daily markdown report and action plan. Include:
 - exit schedule with due today and due soon
 - watchlist alignment and conflicts
 - weekly intelligence context
+- Daily continuity from Sunday, including any ideas that now need Daily override
 - portfolio summary
 - top 3 actions for today
 
