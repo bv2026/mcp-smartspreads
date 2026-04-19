@@ -204,6 +204,20 @@ class PublicationContractTests(unittest.TestCase):
             self.assertEqual(len(artifacts), 4)
             self.assertTrue(all(entry.publication_state == "published" for entry in entries))
 
+    def test_export_watchlist_csv_includes_phase3_fields(self) -> None:
+        result = server.export_watchlist_csv(
+            week_ended="2026-04-10",
+            section_name="intra_commodity",
+            include_reference=True,
+        )
+
+        self.assertIn("principle_scores", result["csv"])
+        self.assertIn("principle_status", result["csv"])
+        self.assertIn("principle_influences", result["csv"])
+        self.assertIn("intelligence_context", result["csv"])
+        self.assertIn("decision_summary", result["csv"])
+        self.assertIn("structure_before_conviction", result["csv"])
+
     def test_refresh_and_publish_issue_rebuilds_stale_brief_before_publishing(self) -> None:
         with self.database.session() as session:
             newsletter = session.execute(

@@ -2825,14 +2825,32 @@ WATCHLIST_CSV_FIELDNAMES = [
     "volatility_structure",
     "section_name",
     "page_number",
+    "tradeable",
+    "blocked_reason",
+    "principle_scores",
+    "principle_status",
+    "principle_influences",
+    "intelligence_context",
+    "decision_summary",
 ]
+
+
+def _csv_safe_row(row: dict[str, Any], fieldnames: list[str]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for fieldname in fieldnames:
+        value = row.get(fieldname)
+        if isinstance(value, (dict, list)):
+            safe[fieldname] = json.dumps(value, sort_keys=True)
+        else:
+            safe[fieldname] = value
+    return safe
 
 
 def _build_watchlist_csv(entries: list[dict[str, Any]]) -> str:
     output = StringIO()
     writer = csv.DictWriter(output, fieldnames=WATCHLIST_CSV_FIELDNAMES, lineterminator="\n")
     writer.writeheader()
-    writer.writerows(entries)
+    writer.writerows(_csv_safe_row(entry, WATCHLIST_CSV_FIELDNAMES) for entry in entries)
     return output.getvalue()
 
 
@@ -3078,7 +3096,7 @@ def export_all_watchlists_csv(
     output = StringIO()
     writer = csv.DictWriter(output, fieldnames=combined_fieldnames, lineterminator="\n")
     writer.writeheader()
-    writer.writerows(rows)
+    writer.writerows(_csv_safe_row(row, combined_fieldnames) for row in rows)
     csv_content = output.getvalue()
 
     written_files: dict[str, str] = {}
