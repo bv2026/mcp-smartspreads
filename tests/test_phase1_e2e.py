@@ -126,14 +126,21 @@ class Phase1EndToEndTests(unittest.TestCase):
         watchlist_path = publish_dir / "watchlist.yaml"
         intelligence_path = publish_dir / "weekly_intelligence.json"
         issue_brief_path = publish_dir / "issue_brief.md"
+        validation_path = publish_dir / "publication_validation.json"
         self.assertTrue(manifest_path.exists())
         self.assertTrue(watchlist_path.exists())
         self.assertTrue(intelligence_path.exists())
         self.assertTrue(issue_brief_path.exists())
+        self.assertTrue(validation_path.exists())
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["publication_version"], "published-e2e")
         self.assertEqual(manifest["watchlist_count"], 2)
+        self.assertIn("publication_validation_json", manifest["files"])
+
+        validation_report = json.loads(validation_path.read_text(encoding="utf-8"))
+        self.assertEqual(validation_report["watchlist_count"], 2)
+        self.assertTrue(validation_report["checks"]["has_entries"])
 
         schwab_config_path = Path(r"C:\work\schwab-mcp-file\src\schwab_mcp\config.py")
         spec = importlib.util.spec_from_file_location("schwab_file_config", schwab_config_path)

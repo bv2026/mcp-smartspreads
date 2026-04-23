@@ -4,6 +4,21 @@ This project ingests Smart Spreads weekly newsletter PDFs from the `data` folder
 
 Current milestone: Phase 1 and Phase 2 are complete for the currently intended scope, and Phase 3 is now live in its first integrated form. The project now has persistent newsletter intelligence, published file-based handoff to the file-based Schwab MCP, an operational Daily workflow, newsletter-history-backed exit scheduling, a strategy/doctrine knowledge layer, and Weekly-Intelligence-informed Sunday principle scoring.
 
+## Latest Integration Update
+
+The current cross-repo hardening sprint is now implemented:
+
+- SmartSpreads publication now writes `publication_validation.json` beside the normal published artifacts.
+- `scripts/run_weekly_pipeline.ps1` now gives one operator path for ingest -> refresh/publish -> Schwab contract load validation.
+- the sibling `schwab-mcp-file` repo now prefers the published SmartSpreads contract when present, preserves `intermarket` entries, and warns when the watchlist source is stale or fallback-only.
+
+What still remains after this sprint:
+
+- run the new weekly pipeline on the live current issue and review the produced validation output
+- decide whether the Schwab side should warn or fail hard when it is using a stale/fallback watchlist
+- add the first Daily persistence layer, currently still expected to be `portfolio_fit_reviews`
+- continue parser drift protection, ingestion validation summaries, migration tooling, and Phase 3 calibration
+
 ## Project Docs
 
 - [`DESIGN.md`](./DESIGN.md) for architecture and schema decisions
@@ -129,6 +144,28 @@ Phase 3 integration coverage includes:
 - Weekly Intelligence influence recording during Sunday scoring
 - publication contract validation for principle-aware fields
 - dry-run compatibility with the published principle context
+
+## Weekly Pipeline
+
+The current operator-facing weekly path is:
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\run_weekly_pipeline.ps1`
+
+Optional explicit week:
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\run_weekly_pipeline.ps1 -WeekEnded 2026-04-17`
+
+What it does:
+
+- ingests any pending newsletters
+- refreshes and republishes the target issue into `published/`
+- writes `watchlist.yaml`, `weekly_intelligence.json`, `issue_brief.md`, `publication_validation.json`, and `publication_manifest.json`
+- validates that the sibling `C:\work\schwab-mcp-file` repo can load the current published watchlist contract
+
+Note:
+
+- the script writes a real publication run into the configured local DB
+- review `published/publication_validation.json` after each run before treating the handoff as trusted for Daily operations
 
 ## Supabase Setup
 

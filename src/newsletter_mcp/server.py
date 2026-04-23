@@ -1476,6 +1476,71 @@ def _build_weekly_intelligence_payload(
     }
 
 
+def _build_publication_validation_report(
+    *,
+    newsletter: Newsletter,
+    publication_version: str,
+    published_at: datetime | None,
+    watchlist_payload: dict[str, Any],
+) -> dict[str, Any]:
+    watchlist_entries = watchlist_payload.get("watchlist", [])
+    empty_legs_entries = [
+        entry["id"]
+        for entry in watchlist_entries
+        if not entry.get("legs")
+    ]
+    missing_symbol_entries = [
+        entry["id"]
+        for entry in watchlist_entries
+        if not entry.get("symbol")
+    ]
+    blocked_entries = [
+        {
+            "id": entry["id"],
+            "name": entry.get("name"),
+            "blocked_reason": entry.get("blocked_reason"),
+        }
+        for entry in watchlist_entries
+        if entry.get("tradeable") is False
+    ]
+    section_counts = Counter(entry.get("section", "unknown") for entry in watchlist_entries)
+    type_counts = Counter(entry.get("type", "unknown") for entry in watchlist_entries)
+    support_review_entries = [
+        {
+            "id": entry["id"],
+            "name": entry.get("name"),
+            "manual_legs_required": entry.get("manual_legs_required", False),
+            "support_notes": entry.get("support_notes", []),
+        }
+        for entry in watchlist_entries
+        if entry.get("manual_legs_required") or entry.get("support_notes")
+    ]
+
+    return {
+        "schema_version": watchlist_payload.get("schema_version"),
+        "publication_version": publication_version,
+        "published_at": published_at.isoformat() if published_at else None,
+        "week_ended": newsletter.week_ended.isoformat(),
+        "watchlist_count": len(watchlist_entries),
+        "tradeable_count": sum(1 for entry in watchlist_entries if entry.get("tradeable") is not False),
+        "blocked_count": sum(1 for entry in watchlist_entries if entry.get("tradeable") is False),
+        "entries_missing_symbols": missing_symbol_entries,
+        "empty_legs_entries": empty_legs_entries,
+        "section_counts": dict(section_counts),
+        "type_counts": dict(type_counts),
+        "intermarket_entry_count": type_counts.get("intermarket", 0),
+        "manual_support_review_count": len(support_review_entries),
+        "manual_support_review_entries": support_review_entries,
+        "blocked_entries": blocked_entries,
+        "checks": {
+            "has_entries": bool(watchlist_entries),
+            "all_entries_have_ids": all(entry.get("id") for entry in watchlist_entries),
+            "all_entries_have_symbols": not missing_symbol_entries,
+            "all_entries_have_legs": not empty_legs_entries,
+        },
+    }
+
+
 def _build_publication_manifest(
     *,
     newsletter: Newsletter,
@@ -3284,6 +3349,12 @@ def publish_issue(
         }
         weekly_intelligence = _build_weekly_intelligence_payload(newsletter, entries, brief, delta, reference)
         issue_brief_markdown = _build_issue_brief_markdown(newsletter, brief, delta, reference, entries)
+        validation_report = _build_publication_validation_report(
+            newsletter=newsletter,
+            publication_version=resolved_version,
+            published_at=publication_run.published_at,
+            watchlist_payload=watchlist_payload,
+        )
 
         watchlist_yaml_path = _write_text_file(str(base_dir / "watchlist.yaml"), _serialize_publication_yaml(watchlist_payload))
         intelligence_path = _write_text_file(
@@ -3291,11 +3362,16 @@ def publish_issue(
             json.dumps(weekly_intelligence, indent=2),
         )
         issue_brief_path = _write_text_file(str(base_dir / "issue_brief.md"), issue_brief_markdown)
+        validation_path = _write_text_file(
+            str(base_dir / "publication_validation.json"),
+            json.dumps(validation_report, indent=2),
+        )
 
         manifest_files = {
             "watchlist_yaml": watchlist_yaml_path,
             "weekly_intelligence_json": intelligence_path,
             "issue_brief_md": issue_brief_path,
+            "publication_validation_json": validation_path,
         }
         manifest = _build_publication_manifest(
             newsletter=newsletter,
@@ -3318,6 +3394,7 @@ def publish_issue(
             ("watchlist_yaml", watchlist_yaml_path, _serialize_publication_yaml(watchlist_payload), len(watchlist_payload["watchlist"])),
             ("weekly_intelligence_json", intelligence_path, json.dumps(weekly_intelligence, indent=2), len(entries)),
             ("issue_brief_md", issue_brief_path, issue_brief_markdown, None),
+            ("publication_validation_json", validation_path, json.dumps(validation_report, indent=2), len(entries)),
             ("publication_manifest_json", manifest_path, json.dumps(manifest, indent=2), None),
         ]
         for artifact_type, file_path, content, row_count in artifact_specs:

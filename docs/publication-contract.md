@@ -18,6 +18,7 @@ Primary files:
 - `published/watchlist.yaml`
 - `published/weekly_intelligence.json`
 - `published/issue_brief.md`
+- `published/publication_validation.json`
 - `published/publication_manifest.json`
 
 ## `watchlist.yaml`
@@ -177,6 +178,37 @@ Fields:
 - `output_root`
 - `files`
 - `watchlist_count`
+
+## `publication_validation.json`
+
+Purpose:
+- fast operator-facing validation artifact for the weekly handoff
+- compact summary of whether the published contract looks usable before Daily review
+
+Fields currently include:
+
+- `schema_version`
+- `publication_version`
+- `published_at`
+- `week_ended`
+- `watchlist_count`
+- `tradeable_count`
+- `blocked_count`
+- `entries_missing_symbols`
+- `empty_legs_entries`
+- `section_counts`
+- `type_counts`
+- `intermarket_entry_count`
+- `manual_support_review_count`
+- `manual_support_review_entries`
+- `blocked_entries`
+- `checks`
+
+Current usage:
+
+- review this file after publication before treating the handoff as trusted
+- use it to catch missing legs, unresolved symbols, blocked entries, and support-limited entries quickly
+- the weekly pipeline script also relies on this artifact during the cross-repo handoff check
 
 ## Database linkage
 

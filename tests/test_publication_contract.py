@@ -162,6 +162,7 @@ class PublicationContractTests(unittest.TestCase):
         self.assertTrue((output_dir / "watchlist.yaml").exists())
         self.assertTrue((output_dir / "weekly_intelligence.json").exists())
         self.assertTrue((output_dir / "issue_brief.md").exists())
+        self.assertTrue((output_dir / "publication_validation.json").exists())
         self.assertTrue((output_dir / "publication_manifest.json").exists())
 
         watchlist_payload = json.loads((output_dir / "watchlist.yaml").read_text(encoding="utf-8"))
@@ -185,9 +186,21 @@ class PublicationContractTests(unittest.TestCase):
         self.assertIn("# SmartSpreads Issue Brief - 2026-04-10", issue_brief_md)
         self.assertIn("## Reference Rules", issue_brief_md)
 
+        validation_report = json.loads((output_dir / "publication_validation.json").read_text(encoding="utf-8"))
+        self.assertEqual(validation_report["watchlist_count"], 2)
+        self.assertEqual(validation_report["blocked_count"], 1)
+        self.assertEqual(validation_report["entries_missing_symbols"], [])
+        self.assertEqual(
+            validation_report["empty_legs_entries"],
+            ["wl_intra-commodity_sugar-11_sbk26-sbv26_sell"],
+        )
+        self.assertTrue(validation_report["checks"]["all_entries_have_symbols"])
+        self.assertFalse(validation_report["checks"]["all_entries_have_legs"])
+
         manifest = json.loads((output_dir / "publication_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["watchlist_count"], 2)
         self.assertIn("watchlist_yaml", manifest["files"])
+        self.assertIn("publication_validation_json", manifest["files"])
         self.assertIn("publication_manifest_json", manifest["files"])
 
         with self.database.session() as session:
@@ -201,7 +214,7 @@ class PublicationContractTests(unittest.TestCase):
             self.assertEqual(newsletter.issue_status, "published")
             self.assertEqual(len(publication_runs), 2)
             self.assertEqual(publication_runs[-1].publication_version, "published-1")
-            self.assertEqual(len(artifacts), 4)
+            self.assertEqual(len(artifacts), 5)
             self.assertTrue(all(entry.publication_state == "published" for entry in entries))
 
     def test_export_watchlist_csv_includes_phase3_fields(self) -> None:

@@ -21,9 +21,12 @@
 
 ## Workflow improvements
 
+- Add a single weekly pipeline command that runs ingest, refresh/publish, and Schwab contract-load validation
+
 - Add an automated “new PDF dropped into data” ingest/export script
 - Add scheduled local or hosted export jobs
 - Add issue-level validation reports after ingestion
+- Expand publication validation into richer parser and issue-level checks
 
 ## Product direction
 

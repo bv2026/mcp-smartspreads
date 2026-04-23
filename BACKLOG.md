@@ -42,13 +42,13 @@ This milestone makes schema evolution and deployment safer.
 ### Must Have
 
 - [ ] Add automated “new PDF dropped into `data`” workflow
-- [ ] Add one command that runs ingest -> validate -> export bundle
+- [x] Add one command that runs ingest -> validate -> export bundle
 - [ ] Add clear success/failure output for operational runs
 - [ ] Add duplicate-detection and corrected-issue handling rules during ingestion
 
 ### Should Have
 
-- [ ] Add issue-level validation summary files
+- [x] Add issue-level validation summary files
 - [ ] Add health-check / smoke-test MCP tool
 - [ ] Add operational logs for each ingest/export run
 
@@ -139,9 +139,9 @@ This milestone improves maintainability and team workflow.
 ### Immediate next priorities
 
 1. Parser tests
-2. Ingestion validation report
-3. Newsletter brief generation
-4. Automated ingest/export workflow
+2. Richer ingestion and parser validation reporting
+3. Daily persistence (`portfolio_fit_reviews`)
+4. Live run of the weekly pipeline on the next newsletter cycle
 5. Schema migrations
 
 ### After that

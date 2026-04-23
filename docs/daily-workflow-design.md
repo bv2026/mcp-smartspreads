@@ -284,6 +284,7 @@ The Daily workflow should explicitly handle:
 - partial or missing live market data
 - unmatched positions that cannot be linked to newsletter entries
 - blocked watchlist ideas that should not be surfaced as candidates
+- stale or fallback watchlist contract loading on the Schwab side
 
 If data quality is weak, the report should say so clearly and downgrade confidence.
 
@@ -438,6 +439,8 @@ The current Daily dry-run implementation now supports:
 - reuse of Sunday `principle_influences`, `intelligence_context`, and deferred-principle context from `watchlist.yaml`
 - Daily continuity analysis through the Newsletter business layer
 - reporting of Daily drift from the Sunday baseline without shared DB writes
+- published-contract validation via `publication_validation.json` before handoff
+- a weekly pipeline script that refreshes publication and confirms the sibling Schwab repo can load the published contract
 
 Current known gap:
 - if an open position truly has no newsletter-history match, the report still shows `Unknown` and a manual fallback field has not yet been introduced
