@@ -15,7 +15,7 @@ SCHWAB_ROOT = Path(r"C:\work\schwab-mcp-file")
 RUN_DIR = ROOT / "run"
 RUN_DIR.mkdir(exist_ok=True)
 
-NEWSLETTER_STATE = RUN_DIR / "newsletter-mcp.json"
+NEWSLETTER_STATE = RUN_DIR / "smartspreads-mcp.json"
 SCHWAB_STATE = RUN_DIR / "schwab-smartspreads-file.json"
 
 
@@ -136,7 +136,7 @@ def schwab_env() -> dict[str, str]:
 
 
 def verify() -> None:
-    status_server("newsletter-mcp", NEWSLETTER_STATE)
+    status_server("smartspreads-mcp", NEWSLETTER_STATE)
     status_server("schwab-smartspreads-file", SCHWAB_STATE)
 
     sys.path.insert(0, str(ROOT / "src"))
@@ -204,13 +204,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "start":
-        start_server("newsletter-mcp", "newsletter_mcp.server", ROOT, newsletter_env(), NEWSLETTER_STATE)
+        start_server("smartspreads-mcp", "newsletter_mcp.server", ROOT, newsletter_env(), NEWSLETTER_STATE)
         start_server("schwab-smartspreads-file", "schwab_mcp.server", SCHWAB_ROOT, schwab_env(), SCHWAB_STATE)
     elif args.command == "stop":
-        stop_server("newsletter-mcp", NEWSLETTER_STATE)
+        stop_server("smartspreads-mcp", NEWSLETTER_STATE)
         stop_server("schwab-smartspreads-file", SCHWAB_STATE)
     elif args.command == "status":
-        status_server("newsletter-mcp", NEWSLETTER_STATE)
+        status_server("smartspreads-mcp", NEWSLETTER_STATE)
         status_server("schwab-smartspreads-file", SCHWAB_STATE)
     elif args.command == "verify":
         verify()

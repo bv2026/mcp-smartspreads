@@ -76,7 +76,7 @@ For this use case, I recommend:
 
 ### `evaluation_runs`, `principle_evaluations`, and `watchlist_decisions`
 
-- Durable Phase 3 audit tables owned by `newsletter-mcp`
+- Durable Phase 3 audit tables owned by `smartspreads-mcp`
 - Store Sunday evaluation runs, per-principle outcomes, and per-entry decision snapshots
 - Preserve the current publication bridge while building toward richer decision history
 
@@ -116,7 +116,7 @@ For this use case, I recommend:
 2. Install dependencies with `python -m pip install -e .`
 3. Copy `.env.example` to `.env`
 4. Set `DATABASE_URL`
-5. Run the server with `newsletter-mcp`
+5. Run the server with `smartspreads-mcp`
 
 ## Testing
 

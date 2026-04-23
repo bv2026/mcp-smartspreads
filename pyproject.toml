@@ -1,5 +1,5 @@
 [project]
-name = "newsletter-mcp"
+name = "smartspreads-mcp"
 version = "0.1.0"
 description = "MCP server for ingesting Smart Spreads newsletter PDFs into a database."
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-newsletter-mcp = "newsletter_mcp.server:main"
+smartspreads-mcp = "newsletter_mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

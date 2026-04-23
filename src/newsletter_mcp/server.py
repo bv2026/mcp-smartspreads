@@ -87,7 +87,7 @@ ROOT_BLOCK_REASONS = {
 settings = Settings.from_env()
 database = Database(settings.database_url)
 database.create_schema()
-mcp = FastMCP("newsletter-mcp")
+mcp = FastMCP("smartspreads-mcp")
 DEFAULT_SCHWAB_CATALOG_CSV = Path(r"C:\Users\vsbra\OneDrive\Downloads1\futures-tradelog - Sheet13.csv")
 MONTH_NAME_ORDER = [
     "January",

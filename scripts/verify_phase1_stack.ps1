@@ -22,7 +22,7 @@ function Show-ProcessStatus {
     }
 }
 
-Show-ProcessStatus "newsletter-mcp"
+Show-ProcessStatus "smartspreads-mcp"
 Show-ProcessStatus "schwab-smartspreads-file"
 
 $env:PYTHONPATH = Join-Path $root "src"

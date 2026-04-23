@@ -23,7 +23,7 @@ Use this shape for any MCP client that accepts a command plus arguments:
 ```json
 {
   "mcpServers": {
-    "newsletter-mcp": {
+    "smartspreads-mcp": {
       "command": "powershell",
       "args": [
         "-ExecutionPolicy",
@@ -43,7 +43,7 @@ If your client uses a Claude Desktop style JSON config, use:
 ```json
 {
   "mcpServers": {
-    "newsletter-mcp": {
+    "smartspreads-mcp": {
       "command": "powershell",
       "args": [
         "-ExecutionPolicy",
@@ -63,7 +63,7 @@ If you prefer not to use the PowerShell wrapper:
 ```json
 {
   "mcpServers": {
-    "newsletter-mcp": {
+    "smartspreads-mcp": {
       "command": "python",
       "args": [
         "-m",

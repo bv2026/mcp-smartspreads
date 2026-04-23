@@ -1,6 +1,6 @@
-# Newsletter MCP Prompt Guide
+# SmartSpreads MCP Prompt Guide
 
-This file provides suggested prompts for using the newsletter MCP consistently.
+This file provides suggested prompts for using the smartspreads-mcp consistently.
 
 ## Quiet mode prefix
 
@@ -101,13 +101,13 @@ Use these after a new weekly PDF has been dropped into `data/`.
 ### Sunday intake and validation
 
 ```text
-Use newsletter-mcp only. Ingest any pending newsletter PDFs, tell me which issue dates were added, and flag anything suspicious about watchlist counts, missing reference rules, or section classification.
+Use smartspreads-mcp only. Ingest any pending newsletter PDFs, tell me which issue dates were added, and flag anything suspicious about watchlist counts, missing reference rules, or section classification.
 ```
 
 ### Sunday issue brief
 
 ```text
-Use newsletter-mcp only. Build the weekly intelligence brief for the April 10, 2026 newsletter. Include:
+Use smartspreads-mcp only. Build the weekly intelligence brief for the April 10, 2026 newsletter. Include:
 - issue summary
 - intra-commodity summary
 - inter-commodity summary
@@ -119,13 +119,13 @@ Use newsletter-mcp only. Build the weekly intelligence brief for the April 10, 2
 ### Sunday publish workflow
 
 ```text
-Use newsletter-mcp only. Publish the April 10, 2026 issue into the published folder, then confirm the publication version, manifest path, and watchlist row count.
+Use smartspreads-mcp only. Publish the April 10, 2026 issue into the published folder, then confirm the publication version, manifest path, and watchlist row count.
 ```
 
 ### Sunday export workflow
 
 ```text
-Use newsletter-mcp only. Export the April 10, 2026 issue as:
+Use smartspreads-mcp only. Export the April 10, 2026 issue as:
 - intra-commodity CSV
 - inter-commodity CSV
 - issue package with reference metadata
@@ -135,7 +135,7 @@ and tell me where the files were written.
 ### Sunday end-to-end review
 
 ```text
-Use newsletter-mcp first, then schwab-smartspreads-file. Republish the latest newsletter issue, confirm the published watchlist metadata, then verify the file-based Schwab MCP can see the published week and use that watchlist for live monitoring.
+Use smartspreads-mcp first, then schwab-smartspreads-file. Republish the latest newsletter issue, confirm the published watchlist metadata, then verify the file-based Schwab MCP can see the published week and use that watchlist for live monitoring.
 ```
 
 ### Sunday E2E metrics check
@@ -183,24 +183,24 @@ Use these on trading days after the Sunday publication step is complete.
 ### Daily morning brief
 
 ```text
-Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+Use only schwab-smartspreads-file and smartspreads-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
 
-Use schwab-smartspreads-file first to get today's futures positions and current watchlist pricing. Then use newsletter-mcp get_daily_exit_schedule with that futures-positions result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning trading brief that combines:
+Use schwab-smartspreads-file first to get today's futures positions and current watchlist pricing. Then use smartspreads-mcp get_daily_exit_schedule with that futures-positions result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Give me a morning trading brief that combines:
 - the current published newsletter week
 - today's live futures/watchlist context
 - my imported current futures positions
 - newsletter-history-backed exit dates for open positions
 - the highest-priority actions for today
 
-Use newsletter-mcp for weekly intelligence, rules, and exit interpretation. Use get_daily_exit_schedule as the preferred exit-resolution path. Use schwab-smartspreads-file for imported positions, live watchlist pricing, live spread pricing, and stream status.
+Use smartspreads-mcp for weekly intelligence, rules, and exit interpretation. Use get_daily_exit_schedule as the preferred exit-resolution path. Use schwab-smartspreads-file for imported positions, live watchlist pricing, live spread pricing, and stream status.
 ```
 
 ### Daily action plan
 
 ```text
-Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+Use only schwab-smartspreads-file and smartspreads-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
 
-Use schwab-smartspreads-file first to get today's futures positions and current watchlist pricing. Then use newsletter-mcp get_daily_exit_schedule with that futures-positions result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Create today's action plan using the latest published newsletter intelligence plus current Schwab data. Include:
+Use schwab-smartspreads-file first to get today's futures positions and current watchlist pricing. Then use smartspreads-mcp get_daily_exit_schedule with that futures-positions result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Create today's action plan using the latest published newsletter intelligence plus current Schwab data. Include:
 - open positions that need attention
 - watchlist ideas that are currently actionable
 - exits due soon or due today
@@ -212,21 +212,21 @@ Use schwab-smartspreads-file first to get today's futures positions and current 
 ### Daily watchlist check
 
 ```text
-Use schwab-smartspreads-file first and newsletter-mcp second. Price the current published watchlist legs and spreads, then explain the results in the context of this week's newsletter reference rules, section summaries, and entry/exit interpretation.
+Use schwab-smartspreads-file first and smartspreads-mcp second. Price the current published watchlist legs and spreads, then explain the results in the context of this week's newsletter reference rules, section summaries, and entry/exit interpretation.
 ```
 
 ### Daily position review
 
 ```text
-Use schwab-smartspreads-file and compare imported current futures positions against the current published newsletter watchlist. Then use newsletter-mcp to explain whether each position is aligned with this week's intra/inter ideas, rules, and exit dates. If a position is not in the current issue, search newsletter history for a legacy-carryover match before marking its exit as unknown.
+Use schwab-smartspreads-file and compare imported current futures positions against the current published newsletter watchlist. Then use smartspreads-mcp to explain whether each position is aligned with this week's intra/inter ideas, rules, and exit dates. If a position is not in the current issue, search newsletter history for a legacy-carryover match before marking its exit as unknown.
 ```
 
 ### Daily exit schedule check
 
 ```text
-Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+Use only schwab-smartspreads-file and smartspreads-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
 
-Use schwab-smartspreads-file first to get today's futures positions. Then use newsletter-mcp get_daily_exit_schedule with that result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Build today's exit schedule from newsletter history, including:
+Use schwab-smartspreads-file first to get today's futures positions. Then use smartspreads-mcp get_daily_exit_schedule with that result. I have already overwritten the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area, and both timestamps are current. Build today's exit schedule from newsletter history, including:
 - current-week exact matches
 - legacy-carryover matches from older newsletters
 - quantity-aware butterfly matches
@@ -238,9 +238,9 @@ Call out any positions that still have no newsletter-history match. Also note an
 ### Daily exit schedule via higher-level tool
 
 ```text
-Use only schwab-smartspreads-file and newsletter-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+Use only schwab-smartspreads-file and smartspreads-mcp. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
 
-Use schwab-smartspreads-file first to get today's futures positions, then use newsletter-mcp get_daily_exit_schedule with that result. Do not search past conversations. Respond only with:
+Use schwab-smartspreads-file first to get today's futures positions, then use smartspreads-mcp get_daily_exit_schedule with that result. Do not search past conversations. Respond only with:
 - matched positions and exit dates
 - unmatched positions
 - manual-leg-only symbols
@@ -332,9 +332,9 @@ Use these in order for the cleanest Phase 3 testing loop:
 - Specify `intra_commodity` or `inter_commodity` when export scope matters.
 - Ask for reference metadata when downstream interpretation is important.
 - Ask for consolidated exports when you want one CSV spanning multiple issues.
-- For Sunday work, start with `newsletter-mcp` and treat it as the source of truth for ingestion, publication, and weekly intelligence.
-- For Daily work, use `schwab-smartspreads-file` for live file-based monitoring and `newsletter-mcp` for interpretation, rules, week-level context, and newsletter-history-backed exit matching.
-- Prefer `newsletter-mcp.get_daily_exit_schedule` over manually composing butterfly quantities or flat leg rows.
+- For Sunday work, start with `smartspreads-mcp` and treat it as the source of truth for ingestion, publication, and weekly intelligence.
+- For Daily work, use `schwab-smartspreads-file` for live file-based monitoring and `smartspreads-mcp` for interpretation, rules, week-level context, and newsletter-history-backed exit matching.
+- Prefer `smartspreads-mcp.get_daily_exit_schedule` over manually composing butterfly quantities or flat leg rows.
 - If Claude starts dumping tool chatter, add: `Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.`
 - Use `schwab-smartspreads-live` only when you explicitly want to compare the legacy/live workflow against the file-based Phase 1 workflow.
 - When Daily output includes VIX-family or other no-tick/manual-leg symbols, ask Claude to distinguish between:

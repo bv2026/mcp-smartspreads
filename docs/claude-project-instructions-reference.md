@@ -20,7 +20,7 @@ system.
 
 The current architecture now has distinct system responsibilities:
 
-- `newsletter-mcp`
+- `smartspreads-mcp`
   - newsletter memory
   - weekly intelligence
   - issue briefs and deltas
@@ -89,7 +89,7 @@ The design goals of that shorter version are:
 
 Claude should understand:
 
-- `newsletter-mcp` = weekly intelligence and memory
+- `smartspreads-mcp` = weekly intelligence and memory
 - `schwab-smartspreads-file` = Daily operational state
 
 ### 2. Workflow split
@@ -117,7 +117,7 @@ Claude should not search old chats when the system already supports:
 
 This is why project instructions should prefer:
 - `schwab-smartspreads-file.get_futures_positions`
-- `newsletter-mcp.get_daily_exit_schedule`
+- `smartspreads-mcp.get_daily_exit_schedule`
 
 ### 4. Response style
 

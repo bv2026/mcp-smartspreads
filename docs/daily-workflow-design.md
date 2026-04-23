@@ -6,7 +6,7 @@ The Daily workflow is the operational layer that runs during market hours.
 
 It should:
 - reuse `schwab-smartspreads-file` for imported futures positions, live pricing, spread values, and current P/L
-- reuse `newsletter-mcp` for weekly intelligence, rules, issue context, and exit interpretation
+- reuse `smartspreads-mcp` for weekly intelligence, rules, issue context, and exit interpretation
 - let Claude combine both into a daily markdown report and action plan
 
 The Daily workflow should not rebuild the existing Schwab MCP operational calculations.
@@ -38,7 +38,7 @@ Owned by `schwab-smartspreads-file`.
 
 ### 2. Newsletter intelligence inputs
 
-Owned by `newsletter-mcp`.
+Owned by `smartspreads-mcp`.
 
 - current published issue metadata
 - issue brief
@@ -143,7 +143,7 @@ This supports:
 
 ### Step 5. Pull weekly intelligence from Newsletter MCP
 
-Use `newsletter-mcp` to retrieve:
+Use `smartspreads-mcp` to retrieve:
 - current published issue summary
 - issue brief
 - watchlist reference rules
@@ -379,7 +379,7 @@ These are the main operational tools from `schwab-smartspreads-file`:
 
 ### Newsletter MCP core Daily tools
 
-These are the main weekly-intelligence tools from `newsletter-mcp`:
+These are the main weekly-intelligence tools from `smartspreads-mcp`:
 
 - `get_daily_exit_schedule`
   - preferred Daily exit-resolution tool when you already have `schwab-smartspreads-file.get_futures_positions`
@@ -413,10 +413,10 @@ For a standard Daily run, the preferred order is:
 
 1. `schwab-smartspreads-file.get_stream_status`
 2. `schwab-smartspreads-file.get_futures_positions`
-3. `newsletter-mcp.get_daily_exit_schedule`
+3. `smartspreads-mcp.get_daily_exit_schedule`
 4. `schwab-smartspreads-file.get_watchlist_quotes`
-5. `newsletter-mcp.get_issue_summary`
-6. `newsletter-mcp.get_watchlist` only if row-level alignment detail is needed
+5. `smartspreads-mcp.get_issue_summary`
+6. `smartspreads-mcp.get_watchlist` only if row-level alignment detail is needed
 7. targeted follow-up with `get_spread_value_live`, `get_live_quote`, or `get_recent_bars` only when necessary
 
 This keeps the Daily flow simple and avoids over-calling tools during normal review.
@@ -488,7 +488,7 @@ The Daily prompt should be explicit about:
 ### Recommended Daily operator prompt
 
 ```text
-Use schwab-smartspreads-file first and newsletter-mcp second.
+Use schwab-smartspreads-file first and smartspreads-mcp second.
 
 Assume the canonical TOS statement CSV and canonical TOS screenshot in the Schwab MCP config area were both updated for the current run.
 
@@ -498,7 +498,7 @@ From schwab-smartspreads-file:
 - price current open positions
 - price the current published watchlist
 
-From newsletter-mcp:
+From smartspreads-mcp:
  - use get_daily_exit_schedule with the Schwab futures-positions result
  - get the current issue summary
  - use the stored issue brief, watchlist rules, issue delta, newsletter-aligned exit dates, and Sunday principle context

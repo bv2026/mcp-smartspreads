@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $runDir = Join-Path $root "run"
 
-foreach ($name in @("newsletter-mcp", "schwab-smartspreads-file")) {
+foreach ($name in @("smartspreads-mcp", "schwab-smartspreads-file")) {
     $statePath = Join-Path $runDir "$name.json"
     if (-not (Test-Path $statePath)) {
         Write-Output "$name is not tracked."

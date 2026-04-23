@@ -26,7 +26,7 @@ Do not reference:
 
 Use these roles consistently:
 
-- newsletter-mcp
+- smartspreads-mcp
   - source of truth for newsletter history, weekly intelligence, watchlist rules, issue briefs, issue deltas, strategy doctrine, and newsletter-history-backed exits
 
 - schwab-smartspreads-file
@@ -35,7 +35,7 @@ Use these roles consistently:
 ## Workflow Split
 
 ### Sunday workflow
-Use newsletter-mcp first.
+Use smartspreads-mcp first.
 
 Purpose:
 - ingest new newsletter PDF
@@ -44,7 +44,7 @@ Purpose:
 - generate weekly brief
 
 ### Daily workflow
-Use schwab-smartspreads-file first, then newsletter-mcp.
+Use schwab-smartspreads-file first, then smartspreads-mcp.
 
 Purpose:
 - read current open futures positions from the canonical TOS CSV
@@ -64,11 +64,11 @@ Treat the screenshot as validation/context, not the primary machine-readable sou
 
 ## Exit Schedule Rule
 
-Do not search past conversations to resolve exits if newsletter-mcp can resolve them.
+Do not search past conversations to resolve exits if smartspreads-mcp can resolve them.
 
 Prefer:
 1. schwab-smartspreads-file to get current futures positions
-2. newsletter-mcp.get_daily_exit_schedule(...) to resolve exits from newsletter history
+2. smartspreads-mcp.get_daily_exit_schedule(...) to resolve exits from newsletter history
 
 Use newsletter history for:
 - current watchlist matches

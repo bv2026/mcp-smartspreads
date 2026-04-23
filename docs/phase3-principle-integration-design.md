@@ -42,7 +42,7 @@ The Daily flow then consumes:
 
 Current live status in the repo:
 
-- Sunday principle evaluation is running in `newsletter-mcp`
+- Sunday principle evaluation is running in `smartspreads-mcp`
 - durable Phase 3 records exist in:
   - `evaluation_runs`
   - `principle_evaluations`
@@ -404,7 +404,7 @@ Phase 3 schema ownership belongs to Newsletter MCP.
 
 Recommended decision:
 
-- `newsletter-mcp` owns the schema, migrations, repository methods, and write path for:
+- `smartspreads-mcp` owns the schema, migrations, repository methods, and write path for:
   - `evaluation_runs`
   - `principle_evaluations`
   - `watchlist_decisions`
@@ -421,8 +421,8 @@ Why this boundary matters:
 Recommended interaction model:
 
 - Sunday:
-  - `newsletter-mcp` evaluates principles and stores durable records
-  - `newsletter-mcp` publishes approved decision summaries to `watchlist.yaml` and `weekly_intelligence.json`
+  - `smartspreads-mcp` evaluates principles and stores durable records
+  - `smartspreads-mcp` publishes approved decision summaries to `watchlist.yaml` and `weekly_intelligence.json`
 - Daily:
   - `schwab-mcp` reads the publication contract plus live account state
   - `schwab-mcp` resolves live-only principles such as portfolio fit and margin pressure in its own workflow
