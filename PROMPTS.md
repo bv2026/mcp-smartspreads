@@ -21,7 +21,7 @@ Ingest all newsletter PDFs currently in the data folder and tell me how many new
 ### Ingest one newsletter
 
 ```text
-Ingest the April 10, 2026 newsletter PDF and return the issue date, number of watchlist rows, and whether a watchlist reference page was captured.
+Ingest the April 24, 2026 newsletter PDF and return the issue date, number of watchlist rows, and whether a watchlist reference page was captured.
 ```
 
 ## Query prompts
@@ -29,7 +29,7 @@ Ingest the April 10, 2026 newsletter PDF and return the issue date, number of wa
 ### Get a watchlist
 
 ```text
-Give me the watchlist for the April 10, 2026 newsletter and include the watchlist reference rules.
+Give me the watchlist for the April 24, 2026 newsletter and include the watchlist reference rules.
 ```
 
 ### Get only intra or inter rows
@@ -53,7 +53,7 @@ Show me the watchlist reference page details for the February 6, 2026 issue, inc
 ### Export one issue to CSV
 
 ```text
-Export the April 10, 2026 intra-commodity watchlist to CSV.
+Export the April 24, 2026 intra-commodity watchlist to CSV.
 ```
 
 ### Export one issue package
@@ -65,7 +65,7 @@ Export the March 27, 2026 inter-commodity watchlist as a package with rows.csv a
 ### Export a consolidated CSV
 
 ```text
-Export a consolidated intra-commodity CSV for all newsletters from December 26, 2025 through April 10, 2026.
+Export a consolidated intra-commodity CSV for all newsletters from December 26, 2025 through April 24, 2026.
 ```
 
 ### Export a full bundle
@@ -107,7 +107,7 @@ Use smartspreads-mcp only. Ingest any pending newsletter PDFs, tell me which iss
 ### Sunday issue brief
 
 ```text
-Use smartspreads-mcp only. Build the weekly intelligence brief for the April 10, 2026 newsletter. Include:
+Use smartspreads-mcp only. Build the weekly intelligence brief for the April 24, 2026 newsletter. Include:
 - issue summary
 - intra-commodity summary
 - inter-commodity summary
@@ -119,13 +119,13 @@ Use smartspreads-mcp only. Build the weekly intelligence brief for the April 10,
 ### Sunday publish workflow
 
 ```text
-Use smartspreads-mcp only. Publish the April 10, 2026 issue into the published folder, then confirm the publication version, manifest path, and watchlist row count.
+Use smartspreads-mcp only. Publish the April 24, 2026 issue into the published folder, then confirm the publication version, manifest path, and watchlist row count.
 ```
 
 ### Sunday export workflow
 
 ```text
-Use smartspreads-mcp only. Export the April 10, 2026 issue as:
+Use smartspreads-mcp only. Export the April 24, 2026 issue as:
 - intra-commodity CSV
 - inter-commodity CSV
 - issue package with reference metadata
