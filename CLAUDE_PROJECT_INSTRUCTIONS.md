@@ -43,6 +43,20 @@ Purpose:
 - publish approved weekly contract
 - generate weekly brief
 
+Hard verification rule:
+- Before building any weekly/latest newsletter report, call `smartspreads-mcp.verify_newsletter_ingested`.
+- If the user named an expected issue date, verify that exact `week_ended`.
+- If the user asked for "latest" or "this week", first report the actual `latest_ingested_week_ended` returned by smartspreads-mcp.
+- If the requested or expected newsletter is not ingested, stop and say so. Do not report from the prior issue, infer from the PDF name, or fill gaps from memory.
+- Only build the report after MCP confirms the issue is ingested and the returned `week_ended` matches the issue being reported.
+
+Watchlist reporting rule:
+- Treat `section_name` as authoritative. Do not move, merge, or summarize `intra_commodity` rows into `inter_commodity` rows or vice versa.
+- Treat each watchlist row as one spread. Do not split a row into separate directional leg trades.
+- Use `spread_expression` verbatim when it is available, for example `BUY (CZ26 - 2*CN27 + CZ27)`.
+- The row `side` applies to the whole `spread_formula`, not to a free-form explanation of individual legs.
+- Do not rename a 3-leg spread as separate calendar and butterfly recommendations. `spread_type` is descriptive only; the tradable idea is the single full row expression.
+
 ### Daily workflow
 Use schwab-smartspreads-file first, then smartspreads-mcp.
 

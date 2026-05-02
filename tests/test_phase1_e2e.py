@@ -182,6 +182,49 @@ class Phase1EndToEndTests(unittest.TestCase):
             self.assertEqual(len(entries), 2)
             self.assertTrue(all(entry.publication_state == "published" for entry in entries))
 
+    def test_verify_newsletter_ingested_reports_missing_requested_issue(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        server._save_parsed_newsletter(parsed)
+
+        present = server.verify_newsletter_ingested("2026-04-10")
+        self.assertTrue(present["is_ingested"])
+        self.assertEqual(present["week_ended"], "2026-04-10")
+        self.assertEqual(present["entry_count"], 2)
+        self.assertEqual(present["section_counts"], {"intra_commodity": 2})
+
+        missing = server.verify_newsletter_ingested("2026-05-01")
+        self.assertFalse(missing["is_ingested"])
+        self.assertEqual(missing["requested_week_ended"], "2026-05-01")
+        self.assertEqual(missing["latest_ingested_week_ended"], "2026-04-10")
+        self.assertIn("not ingested", missing["message"])
+        self.assertNotIn("entry_count", missing)
+
+        latest = server.verify_newsletter_ingested()
+        self.assertTrue(latest["is_ingested"])
+        self.assertEqual(latest["latest_ingested_week_ended"], "2026-04-10")
+        self.assertEqual(latest["entry_count"], 2)
+
+    def test_watchlist_serialization_includes_one_spread_reporting_expression(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        parsed.watchlist_rows = [
+            _make_row(
+                commodity_name="Corn",
+                spread_code="CZ26-2*CN27+CZ27",
+                section_name="intra_commodity",
+                category="Grain",
+            )
+        ]
+        server._save_parsed_newsletter(parsed)
+
+        result = server.get_watchlist("2026-04-10", include_reference=False)
+        entry = result["entries"][0]
+
+        self.assertEqual(entry["section_name"], "intra_commodity")
+        self.assertEqual(entry["spread_type"], "butterfly")
+        self.assertEqual(entry["spread_formula"], "CZ26 - 2*CN27 + CZ27")
+        self.assertEqual(entry["spread_expression"], "SELL (CZ26 - 2*CN27 + CZ27)")
+        self.assertIn("one spread", entry["reporting_rule"])
+
 
 if __name__ == "__main__":
     unittest.main()

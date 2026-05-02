@@ -54,6 +54,11 @@ Each watchlist entry includes:
 - `legs`
 - `leg_details`
 - `type`
+- `spread_type`
+- `spread_formula`
+- `spread_expression`
+- `spread_terms`
+- `reporting_rule`
 - `side`
 - `section`
 - `category`
@@ -93,6 +98,9 @@ Key contract rules:
 - `principle_influences` exposes which Weekly Intelligence or issue-change signals affected scoring
 - `intelligence_context` exposes the compact issue-level context snapshot used during Sunday evaluation
 - `entry_key` is stable across weeks so downstream systems can compare recurring ideas
+- `section` / `section_name` is authoritative; downstream reports must not mix `intra_commodity` and `inter_commodity`
+- `spread_expression` is the canonical report-ready expression for the whole row, e.g. `BUY (CZ26 - 2*CN27 + CZ27)`
+- `side` applies to the complete `spread_formula`; reports should not split a row into independent directional leg trades
 
 ### `principle_context`
 

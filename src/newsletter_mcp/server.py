@@ -527,6 +527,47 @@ def _parse_spread_legs(spread_code: str) -> list[dict[str, Any]]:
     return legs
 
 
+def _spread_terms(spread_code: str) -> list[dict[str, Any]]:
+    terms: list[dict[str, Any]] = []
+    for index, (sign, multiplier_text, contract_code) in enumerate(SPREAD_TOKEN_RE.findall(spread_code)):
+        operator = sign or ("+" if index == 0 else "+")
+        terms.append(
+            {
+                "operator": operator,
+                "multiplier": int(multiplier_text or "1"),
+                "contract_code": contract_code,
+            }
+        )
+    return terms
+
+
+def _format_spread_formula(spread_code: str) -> str:
+    parts: list[str] = []
+    for index, term in enumerate(_spread_terms(spread_code)):
+        operator = term["operator"]
+        prefix = "" if index == 0 and operator == "+" else f"{operator} "
+        multiplier = "" if term["multiplier"] == 1 else f"{term['multiplier']}*"
+        parts.append(f"{prefix}{multiplier}{term['contract_code']}")
+    return " ".join(parts)
+
+
+def _spread_reporting_fields(entry: WatchlistEntry, legs: list[dict[str, Any]]) -> dict[str, Any]:
+    spread_type = _infer_watchlist_type(entry, legs)
+    spread_formula = _format_spread_formula(entry.spread_code)
+    spread_expression = f"{entry.side} ({spread_formula})"
+    return {
+        "spread_type": spread_type,
+        "spread_formula": spread_formula,
+        "spread_expression": spread_expression,
+        "spread_terms": _spread_terms(entry.spread_code),
+        "reporting_rule": (
+            "Report this row as one spread exactly as spread_expression. "
+            "Do not split it into separate directional legs or reclassify intra/inter; "
+            "side applies to the entire spread_formula."
+        ),
+    }
+
+
 def _infer_watchlist_type(entry: WatchlistEntry, legs: list[dict[str, Any]]) -> str:
     unique_roots = {leg["root_code"] for leg in legs}
     multiplier_pattern = [leg["multiplier"] for leg in legs]
@@ -838,6 +879,7 @@ def _build_watchlist_publication_entry(
     entry: WatchlistEntry,
 ) -> dict[str, Any]:
     legs = _parse_spread_legs(entry.spread_code)
+    reporting_fields = _spread_reporting_fields(entry, legs)
     policy_tradeable, policy_blocked_reason = _derive_entry_tradeability(entry, legs)
     principle_evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
     principle_tradeable = principle_evaluation.get("tradeable")
@@ -880,7 +922,12 @@ def _build_watchlist_publication_entry(
         "symbol": symbol,
         "legs": tos_symbols,
         "leg_details": legs,
-        "type": _infer_watchlist_type(entry, legs),
+        "type": reporting_fields["spread_type"],
+        "spread_type": reporting_fields["spread_type"],
+        "spread_formula": reporting_fields["spread_formula"],
+        "spread_expression": reporting_fields["spread_expression"],
+        "spread_terms": reporting_fields["spread_terms"],
+        "reporting_rule": reporting_fields["reporting_rule"],
         "side": entry.side,
         "section": entry.section_name,
         "category": entry.category,
@@ -940,6 +987,7 @@ def _normalize_exit_positions(positions: list[dict[str, Any]]) -> list[dict[str,
             )
             normalized_symbol = str(symbol).strip().upper()
             if normalized_symbol:
+                group["legs"].append(normalized_symbol)
                 leg_quantities: dict[str, int] = group["leg_quantities"]
                 leg_quantities[normalized_symbol] = leg_quantities.get(normalized_symbol, 0) + abs(
                     int(position.get("quantity") or 0)
@@ -949,6 +997,8 @@ def _normalize_exit_positions(positions: list[dict[str, Any]]) -> list[dict[str,
         normalized = dict(position)
         normalized.setdefault("id", position.get("id") or position.get("position_id") or f"position_{index}")
         normalized.setdefault("name", position.get("name") or position.get("position_name"))
+        if symbol and not legs:
+            normalized["legs"] = [str(symbol).strip().upper()]
         passthrough.append(normalized)
 
     normalized_positions = passthrough
@@ -2075,11 +2125,98 @@ def _resolve_pdf_path(pdf_path: str | None) -> Path:
     pdf_files = sorted(settings.data_dir.glob("*.pdf"))
     if not pdf_files:
         raise FileNotFoundError(f"No PDFs found in {settings.data_dir}")
-    return pdf_files[-1]
+
+    parsed_candidates: list[tuple[date, Path]] = []
+    parse_errors: list[str] = []
+    for candidate in pdf_files:
+        try:
+            parsed_candidates.append((parse_newsletter(candidate).week_ended, candidate))
+        except Exception as exc:
+            parse_errors.append(f"{candidate.name}: {exc}")
+
+    if not parsed_candidates:
+        detail = "; ".join(parse_errors) if parse_errors else "no parseable PDFs found"
+        raise FileNotFoundError(f"No parseable newsletter PDFs found in {settings.data_dir}: {detail}")
+
+    return max(parsed_candidates, key=lambda item: item[0])[1]
 
 
 def _parse_issue_date(value: str) -> date:
     return date.fromisoformat(value)
+
+
+def _section_counts(entries: list[WatchlistEntry]) -> dict[str, int]:
+    return dict(Counter(entry.section_name for entry in entries))
+
+
+def _latest_newsletter_record(session: Any) -> Newsletter | None:
+    return session.execute(
+        select(Newsletter).order_by(desc(Newsletter.week_ended)).limit(1)
+    ).scalar_one_or_none()
+
+
+def _newsletter_status_payload(
+    *,
+    requested_week_ended: date | None,
+    requested_newsletter: Newsletter | None,
+    latest_newsletter: Newsletter | None,
+    requested_entries: list[WatchlistEntry],
+) -> dict[str, Any]:
+    latest_week = latest_newsletter.week_ended.isoformat() if latest_newsletter is not None else None
+    requested_week = requested_week_ended.isoformat() if requested_week_ended is not None else None
+    is_ingested = requested_newsletter is not None if requested_week_ended is not None else latest_newsletter is not None
+
+    if requested_week_ended is None:
+        message = (
+            f"Latest ingested newsletter is {latest_week}."
+            if latest_newsletter is not None
+            else "No newsletters are ingested."
+        )
+    elif requested_newsletter is None:
+        message = (
+            f"Requested newsletter {requested_week} is not ingested. "
+            f"Latest ingested newsletter is {latest_week}."
+            if latest_newsletter is not None
+            else f"Requested newsletter {requested_week} is not ingested. No newsletters are ingested."
+        )
+    else:
+        message = f"Requested newsletter {requested_week} is ingested."
+
+    payload: dict[str, Any] = {
+        "requested_week_ended": requested_week,
+        "is_ingested": is_ingested,
+        "latest_ingested_week_ended": latest_week,
+        "latest_source_file": latest_newsletter.source_file if latest_newsletter is not None else None,
+        "message": message,
+    }
+
+    if requested_newsletter is not None:
+        payload.update(
+            {
+                "week_ended": requested_newsletter.week_ended.isoformat(),
+                "source_file": requested_newsletter.source_file,
+                "issue_status": requested_newsletter.issue_status,
+                "page_count": requested_newsletter.page_count,
+                "entry_count": len(requested_entries),
+                "section_counts": _section_counts(requested_entries),
+                "has_watchlist_reference": requested_newsletter.watchlist_reference is not None,
+            }
+        )
+    elif latest_newsletter is not None and requested_week_ended is None:
+        latest_entries = list(latest_newsletter.watchlist_entries)
+        payload.update(
+            {
+                "week_ended": latest_newsletter.week_ended.isoformat(),
+                "source_file": latest_newsletter.source_file,
+                "issue_status": latest_newsletter.issue_status,
+                "page_count": latest_newsletter.page_count,
+                "entry_count": len(latest_entries),
+                "section_counts": _section_counts(latest_entries),
+                "has_watchlist_reference": latest_newsletter.watchlist_reference is not None,
+            }
+        )
+
+    return payload
 
 
 def _refresh_issue_records(session: Any, week_ended: str) -> tuple[Newsletter, dict[str, Any]]:
@@ -2186,6 +2323,34 @@ def list_issues(limit: int = 10) -> list[dict[str, Any]]:
             }
             for record in records
         ]
+
+
+@mcp.tool()
+def verify_newsletter_ingested(week_ended: str | None = None) -> dict[str, Any]:
+    """Verify whether a requested newsletter issue is ingested before reporting from it."""
+    requested_week_ended = _parse_issue_date(week_ended) if week_ended is not None else None
+    with database.session() as session:
+        latest_newsletter = _latest_newsletter_record(session)
+        requested_newsletter = None
+        requested_entries: list[WatchlistEntry] = []
+
+        if requested_week_ended is not None:
+            requested_newsletter = session.execute(
+                select(Newsletter).where(Newsletter.week_ended == requested_week_ended)
+            ).scalar_one_or_none()
+            if requested_newsletter is not None:
+                requested_entries = session.execute(
+                    select(WatchlistEntry)
+                    .where(WatchlistEntry.newsletter_id == requested_newsletter.id)
+                    .order_by(WatchlistEntry.page_number, WatchlistEntry.id)
+                ).scalars().all()
+
+        return _newsletter_status_payload(
+            requested_week_ended=requested_week_ended,
+            requested_newsletter=requested_newsletter,
+            latest_newsletter=latest_newsletter,
+            requested_entries=requested_entries,
+        )
 
 
 @mcp.tool()
@@ -2836,9 +3001,16 @@ def _serialize_watchlist_reference(reference: WatchlistReferenceRecord | None) -
 
 def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
     principle_evaluation = (entry.metadata_json or {}).get("principle_evaluation", {})
+    legs = _parse_spread_legs(entry.spread_code)
+    reporting_fields = _spread_reporting_fields(entry, legs)
     return {
         "commodity_name": entry.commodity_name,
         "spread_code": entry.spread_code,
+        "spread_type": reporting_fields["spread_type"],
+        "spread_formula": reporting_fields["spread_formula"],
+        "spread_expression": reporting_fields["spread_expression"],
+        "spread_terms": reporting_fields["spread_terms"],
+        "reporting_rule": reporting_fields["reporting_rule"],
         "side": entry.side,
         "legs": entry.legs,
         "category": entry.category,
@@ -2871,6 +3043,11 @@ def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
 WATCHLIST_CSV_FIELDNAMES = [
     "commodity_name",
     "spread_code",
+    "spread_type",
+    "spread_formula",
+    "spread_expression",
+    "spread_terms",
+    "reporting_rule",
     "side",
     "legs",
     "category",

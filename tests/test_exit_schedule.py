@@ -326,6 +326,38 @@ class ExitScheduleResolverTests(unittest.TestCase):
         self.assertEqual(corn["entry_value"], -2.0)
         self.assertEqual(corn["spread_type"], "butterfly")
 
+    def test_get_daily_exit_schedule_keeps_unmapped_single_leg_symbols(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base_dir = Path(temp_dir.name)
+        database = Database(f"sqlite:///{(base_dir / 'exit-schedule-single-leg.db').as_posix()}")
+        database.create_schema()
+        self.addCleanup(database.engine.dispose)
+
+        database_patch = mock.patch.object(server, "database", database)
+        database_patch.start()
+        self.addCleanup(database_patch.stop)
+
+        with database.session() as session:
+            current = _make_newsletter(week_ended=date(2026, 4, 10), source_file="current.pdf")
+            session.add(current)
+
+        result = server.get_daily_exit_schedule(
+            schwab_futures_positions={
+                "futures_legs": [
+                    {"symbol": "/HGU26", "quantity": 1, "spread_id": None, "spread_name": None},
+                ],
+                "spreads": [],
+            },
+            as_of="2026-04-16",
+        )
+
+        self.assertEqual(result["position_count"], 1)
+        position = result["positions"][0]
+        self.assertEqual(position["legs"], ["/HGU26"])
+        self.assertFalse(position["matched"])
+        self.assertEqual(position["urgency_bucket"], "unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

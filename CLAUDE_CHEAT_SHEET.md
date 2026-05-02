@@ -13,6 +13,9 @@ Use this when you want fast, reliable prompts for:
 ## General rules
 
 - Name the exact issue date when possible.
+- Before any "latest", "this week", or weekly newsletter report, verify the issue with `smartspreads-mcp.verify_newsletter_ingested`.
+- If the requested or expected issue is not ingested, stop and report that fact; never answer from the prior issue.
+- For watchlist rows, use `spread_expression` exactly as returned. Do not split rows into leg-level trades or reclassify intra/inter sections.
 - For Sunday work, start with `smartspreads-mcp`.
 - For Daily work, start with `schwab-smartspreads-file`, then use `smartspreads-mcp`.
 - Prefer `get_daily_exit_schedule(...)` over asking Claude to manually infer exits.
@@ -41,13 +44,25 @@ Use smartspreads-mcp only. Ingest any pending newsletter PDFs, tell me which iss
 ### 2. Weekly intelligence brief
 
 ```text
-Use smartspreads-mcp only. Build the weekly intelligence brief for the April 10, 2026 newsletter. Include:
+Use smartspreads-mcp only. First verify the April 10, 2026 newsletter is ingested with verify_newsletter_ingested. If it is not ingested, stop and say the latest ingested issue. If it is ingested, build the weekly intelligence brief for the April 10, 2026 newsletter. Include:
 - issue summary
 - intra-commodity summary
 - inter-commodity summary
 - notable themes
 - notable additions/removals versus the prior issue
 - important watchlist reference rules that affect interpretation
+```
+
+### 2a. Latest ingested check
+
+```text
+Use smartspreads-mcp only. Verify the latest ingested newsletter issue first and report its week_ended and source_file. If that is not the issue I expect for this week, stop and say the newsletter is not ingested. Do not report from an older issue.
+```
+
+### 2b. Intra-only list without spread reinterpretation
+
+```text
+Use smartspreads-mcp only. First verify the requested issue is ingested. Then get the watchlist and return only rows where section_name is exactly intra_commodity. For each row, print commodity_name, spread_expression, enter_date, exit_date, trade_quality, and volatility_structure. Use spread_expression verbatim. Do not split rows into legs, do not create calendar/butterfly sub-bullets, and do not include inter_commodity rows.
 ```
 
 ### 3. Publish the approved week
@@ -200,8 +215,8 @@ Use smartspreads-mcp list_strategy_principles and get_issue_summary for 2026-04-
 - `Figure out the exits manually...`
   - Use `get_daily_exit_schedule(...)` instead.
 
-- `Use the latest issue` without a date
-  - Fine for casual use, but less reliable than naming the exact issue date.
+- `Use the latest issue` without verification
+  - Always force `verify_newsletter_ingested` first; otherwise Claude may report from the latest stored issue even when this week's PDF has not been ingested.
 
 ---
 

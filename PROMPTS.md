@@ -12,6 +12,18 @@ Use only the needed MCP tools. Do not show tool discovery, function schemas, int
 
 ## Ingestion prompts
 
+### Verify newsletter availability before reporting
+
+```text
+Use smartspreads-mcp only. Call verify_newsletter_ingested for the issue I requested before answering. If it is not ingested, stop and tell me the requested issue is missing and what the latest ingested issue is. Do not report from an older issue.
+```
+
+### Watchlist spread-reporting guardrail
+
+```text
+When reporting watchlist rows, use section_name and spread_expression exactly as returned by smartspreads-mcp. Treat each row as one spread. Do not split a row into leg-level BUY/SELL trades, do not create separate calendar/butterfly sub-recommendations, and do not move rows between intra_commodity and inter_commodity.
+```
+
 ### Ingest all pending newsletters
 
 ```text
@@ -29,17 +41,17 @@ Ingest the April 24, 2026 newsletter PDF and return the issue date, number of wa
 ### Get a watchlist
 
 ```text
-Give me the watchlist for the April 24, 2026 newsletter and include the watchlist reference rules.
+Use smartspreads-mcp only. First verify the April 24, 2026 newsletter is ingested. If it is missing, stop and tell me the latest ingested issue. If it is present, give me the watchlist for the April 24, 2026 newsletter and include the watchlist reference rules.
 ```
 
 ### Get only intra or inter rows
 
 ```text
-Give me only the intra-commodity watchlist for March 27, 2026.
+Use smartspreads-mcp only. First verify the March 27, 2026 newsletter is ingested. If it is missing, stop and tell me the latest ingested issue. If it is present, give me only rows where section_name is exactly intra_commodity for March 27, 2026. Use spread_expression verbatim and do not split rows into legs or calendar/butterfly sub-bullets.
 ```
 
 ```text
-Give me only the inter-commodity watchlist for January 16, 2026.
+Use smartspreads-mcp only. First verify the January 16, 2026 newsletter is ingested. If it is missing, stop and tell me the latest ingested issue. If it is present, give me only the inter-commodity watchlist for January 16, 2026.
 ```
 
 ### Get watchlist reference rules
@@ -107,13 +119,19 @@ Use smartspreads-mcp only. Ingest any pending newsletter PDFs, tell me which iss
 ### Sunday issue brief
 
 ```text
-Use smartspreads-mcp only. Build the weekly intelligence brief for the April 24, 2026 newsletter. Include:
+Use smartspreads-mcp only. First verify the April 24, 2026 newsletter is ingested with verify_newsletter_ingested. If it is not ingested, stop and say the latest ingested issue. If it is ingested, build the weekly intelligence brief for the April 24, 2026 newsletter. Include:
 - issue summary
 - intra-commodity summary
 - inter-commodity summary
 - notable themes
 - notable additions/removals versus the prior issue
 - important watchlist reference rules that affect interpretation
+```
+
+### Latest newsletter report
+
+```text
+Use smartspreads-mcp only. First call verify_newsletter_ingested with no date and tell me the actual latest_ingested_week_ended and source_file. If that is not the newsletter expected for this week, stop and say the new newsletter is not ingested. If it is correct, give me the report requested from that exact issue only.
 ```
 
 ### Sunday publish workflow
@@ -329,6 +347,7 @@ Use these in order for the cleanest Phase 3 testing loop:
 ## Prompting guidance
 
 - Prefer naming the exact issue date.
+- For "latest" or "this week", first call `verify_newsletter_ingested`; if the expected issue is missing, stop instead of using the prior issue.
 - Specify `intra_commodity` or `inter_commodity` when export scope matters.
 - Ask for reference metadata when downstream interpretation is important.
 - Ask for consolidated exports when you want one CSV spanning multiple issues.
