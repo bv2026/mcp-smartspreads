@@ -15,6 +15,7 @@ Use this when you want fast, reliable prompts for:
 - Name the exact issue date when possible.
 - Before any "latest", "this week", or weekly newsletter report, verify the issue with `smartspreads-mcp.verify_newsletter_ingested`.
 - If the requested or expected issue is not ingested, stop and report that fact; never answer from the prior issue.
+- If `verify_newsletter_ingested` returns old fields like `status: verified`, `Calendar Spreads`, or `Butterfly Spreads`, stop: Claude is using a stale MCP tool/cache. Restart Claude and use the current `smartspreads-mcp` server.
 - For watchlist rows, use `spread_expression` exactly as returned. Do not split rows into leg-level trades or reclassify intra/inter sections.
 - For Sunday work, start with `smartspreads-mcp`.
 - For Daily work, start with `schwab-smartspreads-file`, then use `smartspreads-mcp`.

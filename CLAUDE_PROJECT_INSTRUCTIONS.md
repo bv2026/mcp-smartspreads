@@ -49,6 +49,7 @@ Hard verification rule:
 - If the user asked for "latest" or "this week", first report the actual `latest_ingested_week_ended` returned by smartspreads-mcp.
 - If the requested or expected newsletter is not ingested, stop and say so. Do not report from the prior issue, infer from the PDF name, or fill gaps from memory.
 - Only build the report after MCP confirms the issue is ingested and the returned `week_ended` matches the issue being reported.
+- The valid verifier response includes `is_ingested`, `requested_week_ended`, `latest_source_file`, `week_ended`, and `section_counts` keyed by `intra_commodity` / `inter_commodity`. If the response instead has old fields such as `status: verified`, `source_file` without `latest_source_file`, or section counts named `Calendar Spreads` / `Butterfly Spreads`, stop and report that Claude is using a stale MCP tool/cache, not the current `smartspreads-mcp` server.
 
 Watchlist reporting rule:
 - Treat `section_name` as authoritative. Do not move, merge, or summarize `intra_commodity` rows into `inter_commodity` rows or vice versa.

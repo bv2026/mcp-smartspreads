@@ -16,6 +16,8 @@ Use only the needed MCP tools. Do not show tool discovery, function schemas, int
 
 ```text
 Use smartspreads-mcp only. Call verify_newsletter_ingested for the issue I requested before answering. If it is not ingested, stop and tell me the requested issue is missing and what the latest ingested issue is. Do not report from an older issue.
+
+The valid verifier response must include is_ingested, requested_week_ended, latest_source_file, week_ended, and section_counts using intra_commodity/inter_commodity. If you see status: verified, Calendar Spreads, Butterfly Spreads, or source_file without latest_source_file, stop and tell me Claude is using a stale MCP tool/cache.
 ```
 
 ### Watchlist spread-reporting guardrail
