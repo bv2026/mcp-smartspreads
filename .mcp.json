@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "smartspreads-mcp": {
+      "command": "C:\\Users\\vsbra\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+      "args": [
+        "-m",
+        "newsletter_mcp.server"
+      ],
+      "cwd": "C:\\work\\SmartSpreads",
+      "env": {
+        "PYTHONPATH": "C:\\work\\SmartSpreads\\src",
+        "NEWSLETTER_DATA_DIR": "C:\\work\\SmartSpreads\\data",
+        "DATABASE_URL": "sqlite:///C:/work/SmartSpreads/newsletters.db"
+      }
+    },
+    "schwab-smartspreads-file": {
+      "command": "C:\\Users\\vsbra\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+      "args": [
+        "-m",
+        "schwab_mcp.server"
+      ],
+      "cwd": "C:\\work\\schwab-mcp-file",
+      "env": {
+        "PYTHONPATH": "C:\\work\\schwab-mcp-file\\src",
+        "SCHWAB_ROOT": "C:\\work\\schwab-mcp-file",
+        "SCHWAB_WATCHLIST_CONFIG": "C:\\work\\SmartSpreads\\published\\watchlist.yaml",
+        "SCHWAB_DB_PATH": "C:\\work\\schwab-mcp-file\\config\\smartspreads.db",
+        "SCHWAB_TOS_STATEMENT_PATH": "C:\\work\\schwab-mcp-file\\config\\tos-statement.csv",
+        "TOS_STATEMENT_PATH": "C:\\work\\schwab-mcp-file\\config\\tos-statement.csv"
+      }
+    }
+  }
+}
