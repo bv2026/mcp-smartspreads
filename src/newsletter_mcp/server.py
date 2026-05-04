@@ -1180,8 +1180,21 @@ def _build_daily_exit_schedule_from_schwab_positions(
         for row in schwab_futures_positions.get("spreads", [])
         if isinstance(row, dict) and row.get("id")
     }
+    complete_spread_positions = [
+        {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "legs": row.get("legs", []),
+            "expanded_legs": row.get("legs", []),
+        }
+        for row in spread_rows.values()
+        if not row.get("error") and row.get("legs")
+    ]
 
-    resolved = _resolve_open_position_exit_schedules(futures_legs, as_of=as_of)
+    resolved = _resolve_open_position_exit_schedules(
+        complete_spread_positions or futures_legs,
+        as_of=as_of,
+    )
     for position in resolved["positions"]:
         spread = spread_rows.get(position.get("position_id"))
         position["spread_type"] = spread.get("type") if spread else None
@@ -1190,7 +1203,22 @@ def _build_daily_exit_schedule_from_schwab_positions(
         position["spread_pl"] = spread.get("spread_pl") if spread else None
         position["marks_live"] = spread.get("marks_live") if spread else None
         position["spread_error"] = spread.get("error") if spread else None
+        if not position.get("matched") and spread and spread.get("exit_date"):
+            exit_date = _parse_issue_date(spread["exit_date"])
+            urgency_bucket, days_to_exit = _exit_urgency_bucket(exit_date, as_of=as_of)
+            position.update(
+                {
+                    "alignment_status": "schwab_config_fallback",
+                    "enter_date": spread.get("enter_date"),
+                    "exit_date": spread.get("exit_date"),
+                    "urgency_bucket": urgency_bucket,
+                    "days_to_exit": days_to_exit,
+                }
+            )
 
+    resolved["urgency_counts"] = dict(
+        Counter(position.get("urgency_bucket", "unknown") for position in resolved["positions"])
+    )
     return resolved
 
 
