@@ -87,6 +87,8 @@ Use spread_expression verbatim. Do not split rows into legs. Do not combine intr
 The `vol_structure` column is the newsletter's literal `Vol Structure` column and must only contain Low, Mid, or High. Never replace it with contango/backwardation labels or inferred structure text.
 
 Inter-Commodity `commodity_name` values must be the literal paired names from the newsletter table, such as `Heating Oil, RBOB Gasoline`. Never replace them with synthetic bucket names like `Grains_Complex`, `Energy_Complex`, or `Metals_Complex`.
+
+The validated report is source-backed. Every report row must have `source_page_number`, `source_raw_row`, and `source_row_hash` inside the tool result. If the tool reports a `source_provenance` mismatch, stop instead of reporting rows.
 ```
 
 ### 3. Publish the approved week

@@ -2167,9 +2167,24 @@ def _invalid_inter_commodity_names(rows: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def _source_row_hash(raw_row: str | None) -> str:
+    return _sha256_text(raw_row or "")
+
+
+def _missing_source_provenance(rows: list[dict[str, Any]]) -> list[str]:
+    missing: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        if not row.get("source_page_number") or not row.get("source_raw_row"):
+            missing.append(
+                f"{index}:{row.get('section_name') or ''}|{row.get('commodity_name') or ''}|{row.get('spread_expression') or ''}"
+            )
+    return missing
+
+
 def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
     legs = _parse_spread_legs(entry.spread_code)
     reporting_fields = _spread_reporting_fields(entry, legs)
+    source_raw_row = entry.raw_row or ""
     return {
         "commodity_name": entry.commodity_name,
         "spread_expression": reporting_fields["spread_expression"],
@@ -2178,6 +2193,9 @@ def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
         "trade_quality": entry.trade_quality,
         "vol_structure": entry.volatility_structure,
         "section_name": entry.section_name,
+        "source_page_number": entry.page_number,
+        "source_raw_row": source_raw_row,
+        "source_row_hash": _source_row_hash(source_raw_row),
     }
 
 
@@ -2190,6 +2208,8 @@ def _watchlist_report_signature(row: dict[str, Any]) -> str:
         "exit_date",
         "trade_quality",
         "vol_structure",
+        "source_page_number",
+        "source_row_hash",
     ]
     return "|".join(str(row.get(field) or "") for field in fields)
 
@@ -3133,6 +3153,7 @@ def _serialize_watchlist_entry(entry: WatchlistEntry) -> dict[str, Any]:
         "volatility_structure": entry.volatility_structure,
         "section_name": entry.section_name,
         "page_number": entry.page_number,
+        "raw_row": entry.raw_row,
         "tradeable": entry.tradeable,
         "blocked_reason": entry.blocked_reason,
         "principle_scores": principle_evaluation.get("principle_scores", {}),
@@ -3170,6 +3191,7 @@ WATCHLIST_CSV_FIELDNAMES = [
     "volatility_structure",
     "section_name",
     "page_number",
+    "raw_row",
     "tradeable",
     "blocked_reason",
     "principle_scores",
@@ -3299,11 +3321,20 @@ def get_validated_watchlist_report(
         "exit_date",
         "trade_quality",
         "section_name",
+        "page_number",
+        "raw_row",
     ]
     report_rows = [
         {
-            **{field: entry.get(field) for field in report_fields},
+            **{
+                field: entry.get(field)
+                for field in report_fields
+                if field not in {"page_number", "raw_row"}
+            },
             "vol_structure": entry.get("volatility_structure"),
+            "source_page_number": entry.get("page_number"),
+            "source_raw_row": entry.get("raw_row") or "",
+            "source_row_hash": _source_row_hash(entry.get("raw_row")),
         }
         for entry in entries
     ]
@@ -3317,6 +3348,7 @@ def get_validated_watchlist_report(
         }
     )
     invalid_inter_commodity_names = _invalid_inter_commodity_names(report_rows)
+    missing_source_provenance = _missing_source_provenance(report_rows)
     actual_entry_count = len(entries)
     expected = {
         "entry_count": expected_entry_count,
@@ -3352,6 +3384,11 @@ def get_validated_watchlist_report(
             "expected": "literal paired commodity names from the Inter-Commodity table, separated by a comma",
             "actual": invalid_inter_commodity_names,
         }
+    if missing_source_provenance:
+        mismatches["source_provenance"] = {
+            "expected": "every watchlist row must include PDF source_page_number and source_raw_row",
+            "actual": missing_source_provenance,
+        }
 
     if mismatches:
         return {
@@ -3362,6 +3399,7 @@ def get_validated_watchlist_report(
             "actual": actual,
             "section_counts": section_counts,
             "watchlist_fingerprint": watchlist_fingerprint,
+            "source_provenance": [],
             "mismatches": mismatches,
             "entries": [],
             "entries_by_section": {},
@@ -3379,6 +3417,17 @@ def get_validated_watchlist_report(
         "actual": actual,
         "section_counts": section_counts,
         "watchlist_fingerprint": watchlist_fingerprint,
+        "source_provenance": [
+            {
+                "section_name": row.get("section_name"),
+                "commodity_name": row.get("commodity_name"),
+                "spread_expression": row.get("spread_expression"),
+                "source_page_number": row.get("source_page_number"),
+                "source_row_hash": row.get("source_row_hash"),
+                "source_raw_row": row.get("source_raw_row"),
+            }
+            for row in report_rows
+        ],
         "entries": report_rows,
         "entries_by_section": dict(entries_by_section),
         "report_markdown": _watchlist_report_markdown(dict(entries_by_section)),

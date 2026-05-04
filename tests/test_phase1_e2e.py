@@ -244,6 +244,10 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertEqual(valid["actual"]["entry_count"], 2)
         self.assertEqual(len(valid["entries"]), 2)
         self.assertEqual(len(valid["entries_by_section"]["intra_commodity"]), 2)
+        self.assertEqual(len(valid["source_provenance"]), 2)
+        self.assertEqual(valid["entries"][0]["source_page_number"], 9)
+        self.assertEqual(valid["entries"][0]["source_raw_row"], "raw row")
+        self.assertIn("source_row_hash", valid["entries"][0])
         self.assertIn("Intra-Commodity Rows (2)", valid["report_markdown"])
         self.assertIn("vol_structure", valid["report_markdown"])
 
@@ -257,6 +261,7 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertFalse(invalid["is_valid"])
         self.assertEqual(invalid["entries"], [])
         self.assertEqual(invalid["entries_by_section"], {})
+        self.assertEqual(invalid["source_provenance"], [])
         self.assertEqual(invalid["report_markdown"], "")
         self.assertEqual(invalid["mismatches"]["entry_count"], {"expected": 31, "actual": 2})
         self.assertIn("watchlist_fingerprint", invalid["mismatches"])
@@ -316,6 +321,30 @@ class Phase1EndToEndTests(unittest.TestCase):
             invalid["mismatches"]["inter_commodity_names"]["actual"],
             ["Grains_Complex"],
         )
+
+    def test_validated_watchlist_report_rejects_rows_without_pdf_provenance(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        server._save_parsed_newsletter(parsed)
+
+        with self.database.session() as session:
+            entry = session.execute(select(WatchlistEntry)).scalars().first()
+            assert entry is not None
+            entry.raw_row = ""
+            session.commit()
+
+        verifier = server.verify_newsletter_ingested()
+        invalid = server.get_validated_watchlist_report(
+            "2026-04-10",
+            expected_entry_count=2,
+            expected_intra_commodity_count=2,
+            expected_inter_commodity_count=0,
+            expected_watchlist_fingerprint=verifier["watchlist_fingerprint"],
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertEqual(invalid["entries"], [])
+        self.assertEqual(invalid["report_markdown"], "")
+        self.assertIn("source_provenance", invalid["mismatches"])
 
 
 if __name__ == "__main__":
