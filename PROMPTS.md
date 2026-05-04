@@ -80,6 +80,12 @@ Stop if it contains any stale fields:
 - Butterfly Spreads
 
 Step 1:
+Call schwab-smartspreads-file check_schwab_auth.
+
+Auth gate:
+If ok is not true or status is SCHWAB_REAUTH_REQUIRED, stop immediately and report SCHWAB_REAUTH_REQUIRED. Do not call positions, exit schedule, or answer from memory/local cached position data.
+
+Step 2:
 Call the Schwab current futures positions tool.
 
 Freshness gate:
@@ -94,11 +100,11 @@ If any of these are true, stop immediately and report SCHWAB POSITION DATA STALE
 Accept position_source = stream_positions when statement_date is today and stale_stream_marks = 0.
 Accept source = stream_positions when all current legs use live_stream marks.
 
-Step 2:
+Step 3:
 Print every current futures leg exactly as returned:
 symbol | side | quantity | mark_source | spread_id | spread_name
 
-Step 3:
+Step 4:
 Print the Schwab spread summaries exactly as returned:
 id | name | type | legs | enter_date | exit_date | marks_live | error
 
@@ -108,8 +114,8 @@ Rules:
 - A repeated quantity can intentionally support overlapping spreads. For example, one SHORT quantity of 2 can support two calendar spreads sharing the same short leg.
 - Prefer the tool's spread summaries over manual grouping when checking completeness.
 
-Step 4:
-Call smartspreads-mcp get_daily_exit_schedule using the exact current futures positions result from Step 1.
+Step 5:
+Call smartspreads-mcp get_daily_exit_schedule using the exact current futures positions result from Step 2.
 
 Report:
 - as_of
@@ -125,6 +131,7 @@ position_id | position_name | alignment_status | exit_date | urgency_bucket | sp
 Final verdict:
 PASS if:
 - SmartSpreads schema gate passes
+- Schwab auth gate passes
 - Schwab freshness gate passes
 - no VXM/VX legs are present unless they are in the current Schwab tool output
 - exit schedule uses current_issue_week_ended from the latest verified SmartSpreads issue
@@ -132,7 +139,7 @@ PASS if:
 
 DATA QUALITY ISSUE if Schwab is fresh but a current spread summary has an error or a null spread_id/spread_name.
 
-FAIL if Claude uses stale schema, stale Schwab data, CSV fallback as current positions, memory, or any spread not present in current tool output.
+FAIL if Claude uses stale schema, fails Schwab auth, uses stale Schwab data, uses CSV fallback as current positions, uses memory, or includes any spread not present in current tool output.
 ```
 
 ## Quiet mode prefix
