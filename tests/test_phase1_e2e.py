@@ -288,6 +288,35 @@ class Phase1EndToEndTests(unittest.TestCase):
             ["contango_with_structure"],
         )
 
+    def test_validated_watchlist_report_rejects_synthetic_inter_commodity_names(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        parsed.watchlist_rows = [
+            _make_row(
+                commodity_name="Grains_Complex",
+                spread_code="ZCN26-ZWN26",
+                section_name="inter_commodity",
+                category="Grain",
+            )
+        ]
+        server._save_parsed_newsletter(parsed)
+
+        verifier = server.verify_newsletter_ingested()
+        invalid = server.get_validated_watchlist_report(
+            "2026-04-10",
+            expected_entry_count=1,
+            expected_intra_commodity_count=0,
+            expected_inter_commodity_count=1,
+            expected_watchlist_fingerprint=verifier["watchlist_fingerprint"],
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertEqual(invalid["entries"], [])
+        self.assertEqual(invalid["report_markdown"], "")
+        self.assertEqual(
+            invalid["mismatches"]["inter_commodity_names"]["actual"],
+            ["Grains_Complex"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2152,6 +2152,21 @@ def _section_counts(entries: list[WatchlistEntry]) -> dict[str, int]:
 VALID_VOL_STRUCTURE_VALUES = {"Low", "Mid", "High"}
 
 
+def _invalid_inter_commodity_names(rows: list[dict[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            str(row.get("commodity_name"))
+            for row in rows
+            if row.get("section_name") == "inter_commodity"
+            and row.get("commodity_name")
+            and (
+                "_" in str(row.get("commodity_name"))
+                or "," not in str(row.get("commodity_name"))
+            )
+        }
+    )
+
+
 def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
     legs = _parse_spread_legs(entry.spread_code)
     reporting_fields = _spread_reporting_fields(entry, legs)
@@ -3301,6 +3316,7 @@ def get_validated_watchlist_report(
             and row.get("vol_structure") not in VALID_VOL_STRUCTURE_VALUES
         }
     )
+    invalid_inter_commodity_names = _invalid_inter_commodity_names(report_rows)
     actual_entry_count = len(entries)
     expected = {
         "entry_count": expected_entry_count,
@@ -3330,6 +3346,11 @@ def get_validated_watchlist_report(
         mismatches["vol_structure_values"] = {
             "expected": sorted(VALID_VOL_STRUCTURE_VALUES),
             "actual": invalid_vol_structure_values,
+        }
+    if invalid_inter_commodity_names:
+        mismatches["inter_commodity_names"] = {
+            "expected": "literal paired commodity names from the Inter-Commodity table, separated by a comma",
+            "actual": invalid_inter_commodity_names,
         }
 
     if mismatches:
