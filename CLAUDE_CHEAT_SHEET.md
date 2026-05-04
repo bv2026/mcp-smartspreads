@@ -59,6 +59,86 @@ Report only:
 If no new issue was added, say so and report the latest ingested issue. Do not assume the uploaded newsletter was ingested unless verify_newsletter_ingested confirms it.
 ```
 
+### Current positions and exit schedule
+
+```text
+Use only smartspreads-mcp and schwab-smartspreads-file. Do not use memory, prior conversation, other MCP servers, or manually reconstructed positions.
+
+Schema gate first:
+Call smartspreads-mcp verify_newsletter_ingested with no date and return the raw JSON.
+
+Continue only if the raw JSON contains:
+- latest_ingested_week_ended
+- latest_source_file
+- entry_count
+- section_counts
+- watchlist_fingerprint
+- watchlist_row_signatures
+
+Stop if it contains any stale fields:
+- latest_ingested_issue
+- watchlist_count
+- high_confidence_new
+- worthy_of_consideration
+- Calendar Spreads
+- Butterfly Spreads
+
+Step 1:
+Call the Schwab current futures positions tool.
+
+Freshness gate:
+If any of these are true, stop immediately and report SCHWAB POSITION DATA STALE:
+- stale_stream_marks > 0
+- warning contains "Do NOT use for trade decisions"
+- any leg has mark_source = stream_stale
+- any leg has mark_source = tos_csv_fallback
+- position_source = tos_csv_rejected_stale
+- error = STALE_TOS_CSV_POSITION_SOURCE
+
+Accept position_source = stream_positions when statement_date is today and stale_stream_marks = 0.
+Accept source = stream_positions when all current legs use live_stream marks.
+
+Step 2:
+Print every current futures leg exactly as returned:
+symbol | side | quantity | mark_source | spread_id | spread_name
+
+Step 3:
+Print the Schwab spread summaries exactly as returned:
+id | name | type | legs | enter_date | exit_date | marks_live | error
+
+Rules:
+- Do not infer closed spreads from memory.
+- Do not add any spread that is not present in the current tool output.
+- A repeated quantity can intentionally support overlapping spreads. For example, one SHORT quantity of 2 can support two calendar spreads sharing the same short leg.
+- Prefer the tool's spread summaries over manual grouping when checking completeness.
+
+Step 4:
+Call smartspreads-mcp get_daily_exit_schedule using the exact current futures positions result from Step 1.
+
+Report:
+- as_of
+- current_issue_week_ended
+- position_count
+- matched_count
+- unmatched/incomplete count
+- urgency_counts
+
+Then list every exit schedule row:
+position_id | position_name | alignment_status | exit_date | urgency_bucket | spread_error | legs
+
+Final verdict:
+PASS if:
+- SmartSpreads schema gate passes
+- Schwab freshness gate passes
+- no VXM/VX legs are present unless they are in the current Schwab tool output
+- exit schedule uses current_issue_week_ended from the latest verified SmartSpreads issue
+- exit schedule contains only spreads present in the current Schwab result
+
+DATA QUALITY ISSUE if Schwab is fresh but a current spread summary has an error or a null spread_id/spread_name.
+
+FAIL if Claude uses stale schema, stale Schwab data, CSV fallback as current positions, memory, or any spread not present in current tool output.
+```
+
 ---
 
 ## General rules
