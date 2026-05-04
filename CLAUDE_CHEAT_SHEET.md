@@ -83,6 +83,8 @@ If is_valid is false, stop and report the mismatch. Do not create a report.
 If is_valid is true, output report_markdown exactly as returned by the tool. Do not rebuild the table yourself.
 
 Use spread_expression verbatim. Do not split rows into legs. Do not combine intra_commodity and inter_commodity. Do not use rows from memory, prior conversation, other tools, or manually reconstructed tables.
+
+The `vol_structure` column is the newsletter's literal `Vol Structure` column and must only contain Low, Mid, or High. Never replace it with contango/backwardation labels or inferred structure text.
 ```
 
 ### 3. Publish the approved week

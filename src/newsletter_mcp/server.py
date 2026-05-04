@@ -2149,6 +2149,9 @@ def _section_counts(entries: list[WatchlistEntry]) -> dict[str, int]:
     return dict(Counter(entry.section_name for entry in entries))
 
 
+VALID_VOL_STRUCTURE_VALUES = {"Low", "Mid", "High"}
+
+
 def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
     legs = _parse_spread_legs(entry.spread_code)
     reporting_fields = _spread_reporting_fields(entry, legs)
@@ -2158,7 +2161,7 @@ def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
         "enter_date": entry.enter_date.isoformat(),
         "exit_date": entry.exit_date.isoformat(),
         "trade_quality": entry.trade_quality,
-        "volatility_structure": entry.volatility_structure,
+        "vol_structure": entry.volatility_structure,
         "section_name": entry.section_name,
     }
 
@@ -2171,7 +2174,7 @@ def _watchlist_report_signature(row: dict[str, Any]) -> str:
         "enter_date",
         "exit_date",
         "trade_quality",
-        "volatility_structure",
+        "vol_structure",
     ]
     return "|".join(str(row.get(field) or "") for field in fields)
 
@@ -2202,7 +2205,7 @@ def _watchlist_report_markdown(entries_by_section: dict[str, list[dict[str, Any]
         rows = entries_by_section[section]
         lines.append(f"### {section_titles.get(section, section)} ({len(rows)})")
         lines.append("")
-        lines.append("| commodity_name | spread_expression | enter_date | exit_date | trade_quality | volatility_structure |")
+        lines.append("| commodity_name | spread_expression | enter_date | exit_date | trade_quality | vol_structure |")
         lines.append("|---|---|---|---|---|---|")
         for row in rows:
             lines.append(
@@ -2215,7 +2218,7 @@ def _watchlist_report_markdown(entries_by_section: dict[str, list[dict[str, Any]
                         "enter_date",
                         "exit_date",
                         "trade_quality",
-                        "volatility_structure",
+                        "vol_structure",
                     ]
                 )
                 + " |"
@@ -3280,11 +3283,24 @@ def get_validated_watchlist_report(
         "enter_date",
         "exit_date",
         "trade_quality",
-        "volatility_structure",
         "section_name",
     ]
-    report_rows = [{field: entry.get(field) for field in report_fields} for entry in entries]
+    report_rows = [
+        {
+            **{field: entry.get(field) for field in report_fields},
+            "vol_structure": entry.get("volatility_structure"),
+        }
+        for entry in entries
+    ]
     watchlist_fingerprint = _watchlist_report_fingerprint(report_rows)
+    invalid_vol_structure_values = sorted(
+        {
+            str(row.get("vol_structure"))
+            for row in report_rows
+            if row.get("vol_structure")
+            and row.get("vol_structure") not in VALID_VOL_STRUCTURE_VALUES
+        }
+    )
     actual_entry_count = len(entries)
     expected = {
         "entry_count": expected_entry_count,
@@ -3309,6 +3325,11 @@ def get_validated_watchlist_report(
         mismatches["watchlist_fingerprint"] = {
             "expected": expected_watchlist_fingerprint,
             "actual": watchlist_fingerprint,
+        }
+    if invalid_vol_structure_values:
+        mismatches["vol_structure_values"] = {
+            "expected": sorted(VALID_VOL_STRUCTURE_VALUES),
+            "actual": invalid_vol_structure_values,
         }
 
     if mismatches:

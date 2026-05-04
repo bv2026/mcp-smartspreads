@@ -245,6 +245,7 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertEqual(len(valid["entries"]), 2)
         self.assertEqual(len(valid["entries_by_section"]["intra_commodity"]), 2)
         self.assertIn("Intra-Commodity Rows (2)", valid["report_markdown"])
+        self.assertIn("vol_structure", valid["report_markdown"])
 
         invalid = server.get_validated_watchlist_report(
             "2026-04-10",
@@ -259,6 +260,33 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertEqual(invalid["report_markdown"], "")
         self.assertEqual(invalid["mismatches"]["entry_count"], {"expected": 31, "actual": 2})
         self.assertIn("watchlist_fingerprint", invalid["mismatches"])
+
+    def test_validated_watchlist_report_rejects_inferred_vol_structure_values(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        server._save_parsed_newsletter(parsed)
+
+        with self.database.session() as session:
+            entry = session.execute(select(WatchlistEntry)).scalars().first()
+            assert entry is not None
+            entry.volatility_structure = "contango_with_structure"
+            session.commit()
+
+        verifier = server.verify_newsletter_ingested()
+        invalid = server.get_validated_watchlist_report(
+            "2026-04-10",
+            expected_entry_count=2,
+            expected_intra_commodity_count=2,
+            expected_inter_commodity_count=0,
+            expected_watchlist_fingerprint=verifier["watchlist_fingerprint"],
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertEqual(invalid["entries"], [])
+        self.assertEqual(invalid["report_markdown"], "")
+        self.assertEqual(
+            invalid["mismatches"]["vol_structure_values"]["actual"],
+            ["contango_with_structure"],
+        )
 
 
 if __name__ == "__main__":
