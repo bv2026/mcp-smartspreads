@@ -10,9 +10,59 @@ Use this when you want fast, reliable prompts for:
 
 ---
 
+## Copy This First
+
+### Latest validated watchlist report
+
+```text
+Use smartspreads-mcp only. Do not use memory, prior conversation, other MCP servers, or manually reconstructed rows.
+
+Call verify_newsletter_ingested with no date and return the raw JSON.
+
+If is_ingested is false, stop and say the latest newsletter is not ingested.
+
+Use the verifier output as the contract for get_validated_watchlist_report:
+- week_ended = verifier.week_ended
+- expected_entry_count = verifier.entry_count
+- expected_intra_commodity_count = verifier.section_counts.intra_commodity
+- expected_inter_commodity_count = verifier.section_counts.inter_commodity
+- expected_watchlist_fingerprint = verifier.watchlist_fingerprint
+
+Call get_validated_watchlist_report using that contract.
+
+If is_valid is false, stop and report only the mismatches. Do not create a watchlist report.
+
+If is_valid is true, output report_markdown exactly as returned by the tool. Do not rebuild, reorder, summarize, normalize, supplement, or infer any rows.
+
+Use spread_expression verbatim. Do not split rows into legs. Do not combine intra_commodity and inter_commodity. Do not label rows as calendar/butterfly unless the tool output already does.
+
+The vol_structure column is the newsletter's literal Vol Structure column and must only contain Low, Mid, or High. Never replace it with contango/backwardation labels or inferred structure text.
+
+Inter-Commodity commodity_name values must be literal paired names from the newsletter table, such as Heating Oil, RBOB Gasoline. Never replace them with synthetic bucket names like Grains_Complex, Energy_Complex, or Metals_Complex.
+
+Every report row must be source-backed inside the tool result with source_page_number, source_raw_row, and source_row_hash. If the tool reports a source_provenance mismatch, stop instead of reporting rows.
+```
+
+### Ingest latest newsletter
+
+```text
+Use smartspreads-mcp only. Ingest any pending newsletter PDFs from the configured newsletter data folder. Then call verify_newsletter_ingested with no date and return the raw JSON.
+
+Report only:
+- issue dates newly added
+- latest_ingested_week_ended
+- latest_source_file
+- entry_count
+- section_counts
+- has_watchlist_reference
+
+If no new issue was added, say so and report the latest ingested issue. Do not assume the uploaded newsletter was ingested unless verify_newsletter_ingested confirms it.
+```
+
+---
+
 ## General rules
 
-- Name the exact issue date when possible.
 - Before any "latest", "this week", or weekly newsletter report, verify the issue with `smartspreads-mcp.verify_newsletter_ingested`.
 - If the requested or expected issue is not ingested, stop and report that fact; never answer from the prior issue.
 - If `verify_newsletter_ingested` returns old fields like `status: verified`, `Calendar Spreads`, or `Butterfly Spreads`, stop: Claude is using a stale MCP tool/cache. Restart Claude and use the current `smartspreads-mcp` server.
@@ -39,7 +89,7 @@ Use only the needed MCP tools. Do not show tool discovery, function schemas, int
 ### 1. Ingest new newsletter(s)
 
 ```text
-Use smartspreads-mcp only. Ingest any pending newsletter PDFs, tell me which issue dates were added, and flag anything suspicious about watchlist counts, missing reference rules, or section classification.
+Use smartspreads-mcp only. Ingest any pending newsletter PDFs from the configured newsletter data folder. Then call verify_newsletter_ingested with no date and return the raw JSON. Report the newly added issue dates, latest_ingested_week_ended, latest_source_file, entry_count, section_counts, and has_watchlist_reference.
 ```
 
 ### 2. Weekly intelligence brief
