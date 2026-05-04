@@ -225,6 +225,32 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertEqual(entry["spread_expression"], "SELL (CZ26 - 2*CN27 + CZ27)")
         self.assertIn("one spread", entry["reporting_rule"])
 
+    def test_validated_watchlist_report_withholds_rows_on_contract_mismatch(self) -> None:
+        parsed = _make_parsed_newsletter(self.base_dir)
+        server._save_parsed_newsletter(parsed)
+
+        valid = server.get_validated_watchlist_report(
+            "2026-04-10",
+            expected_entry_count=2,
+            expected_intra_commodity_count=2,
+            expected_inter_commodity_count=0,
+        )
+        self.assertTrue(valid["is_valid"])
+        self.assertEqual(valid["actual"]["entry_count"], 2)
+        self.assertEqual(len(valid["entries"]), 2)
+        self.assertEqual(len(valid["entries_by_section"]["intra_commodity"]), 2)
+
+        invalid = server.get_validated_watchlist_report(
+            "2026-04-10",
+            expected_entry_count=31,
+            expected_intra_commodity_count=21,
+            expected_inter_commodity_count=10,
+        )
+        self.assertFalse(invalid["is_valid"])
+        self.assertEqual(invalid["entries"], [])
+        self.assertEqual(invalid["entries_by_section"], {})
+        self.assertEqual(invalid["mismatches"]["entry_count"], {"expected": 31, "actual": 2})
+
 
 if __name__ == "__main__":
     unittest.main()

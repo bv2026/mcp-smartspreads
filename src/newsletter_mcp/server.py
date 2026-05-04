@@ -3178,6 +3178,73 @@ def get_watchlist(
 
 
 @mcp.tool()
+def get_validated_watchlist_report(
+    week_ended: str,
+    expected_entry_count: int | None = None,
+    expected_intra_commodity_count: int | None = None,
+    expected_inter_commodity_count: int | None = None,
+) -> dict[str, Any]:
+    """Return watchlist rows only after issue and section counts match the expected contract."""
+    result = get_watchlist(week_ended=week_ended, include_reference=False)
+    entries = result["entries"]
+    section_counts = dict(Counter(entry["section_name"] for entry in entries))
+    actual_entry_count = len(entries)
+    expected = {
+        "entry_count": expected_entry_count,
+        "intra_commodity": expected_intra_commodity_count,
+        "inter_commodity": expected_inter_commodity_count,
+    }
+    actual = {
+        "entry_count": actual_entry_count,
+        "intra_commodity": section_counts.get("intra_commodity", 0),
+        "inter_commodity": section_counts.get("inter_commodity", 0),
+    }
+    mismatches = {
+        key: {"expected": value, "actual": actual[key]}
+        for key, value in expected.items()
+        if value is not None and actual[key] != value
+    }
+
+    if mismatches:
+        return {
+            "is_valid": False,
+            "week_ended": result["week_ended"],
+            "message": "Watchlist contract mismatch. Rows withheld to prevent bogus reports.",
+            "expected": {key: value for key, value in expected.items() if value is not None},
+            "actual": actual,
+            "section_counts": section_counts,
+            "mismatches": mismatches,
+            "entries": [],
+            "entries_by_section": {},
+        }
+
+    entries_by_section: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    report_fields = [
+        "commodity_name",
+        "spread_expression",
+        "enter_date",
+        "exit_date",
+        "trade_quality",
+        "volatility_structure",
+        "section_name",
+    ]
+    for entry in entries:
+        entries_by_section[entry["section_name"]].append(
+            {field: entry.get(field) for field in report_fields}
+        )
+
+    return {
+        "is_valid": True,
+        "week_ended": result["week_ended"],
+        "message": "Watchlist contract validated. Rows are safe to report.",
+        "actual": actual,
+        "section_counts": section_counts,
+        "entries": [{field: entry.get(field) for field in report_fields} for entry in entries],
+        "entries_by_section": dict(entries_by_section),
+    }
+
+
+@mcp.tool()
 def resolve_open_position_exit_schedule(
     positions: list[dict[str, Any]],
     as_of: str | None = None,
