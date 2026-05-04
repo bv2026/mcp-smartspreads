@@ -66,6 +66,27 @@ Use smartspreads-mcp only. Verify the latest ingested newsletter issue first and
 Use smartspreads-mcp only. First verify the requested issue is ingested. Then get the watchlist and return only rows where section_name is exactly intra_commodity. For each row, print commodity_name, spread_expression, enter_date, exit_date, trade_quality, and volatility_structure. Use spread_expression verbatim. Do not split rows into legs, do not create calendar/butterfly sub-bullets, and do not include inter_commodity rows.
 ```
 
+### 2c. Latest validated watchlist report
+
+```text
+Use smartspreads-mcp only. Do not use memory or prior conversation.
+
+First call verify_newsletter_ingested with no date and return the raw JSON. Then use that verifier output as the contract for get_validated_watchlist_report:
+- expected_entry_count = verifier.entry_count
+- expected_intra_commodity_count = verifier.section_counts.intra_commodity
+- expected_inter_commodity_count = verifier.section_counts.inter_commodity
+
+Call get_validated_watchlist_report for verifier.week_ended using those expected counts.
+
+If is_valid is false, stop and report the mismatch. Do not create a report.
+If is_valid is true, report only rows returned by entries_by_section.
+
+For each row print:
+commodity_name | spread_expression | enter_date | exit_date | trade_quality | volatility_structure
+
+Use spread_expression verbatim. Do not split rows into legs. Do not combine intra_commodity and inter_commodity. Do not use rows from memory, prior conversation, other tools, or manually reconstructed tables.
+```
+
 ### 3. Publish the approved week
 
 ```text

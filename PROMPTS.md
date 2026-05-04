@@ -136,6 +136,32 @@ Use smartspreads-mcp only. First verify the April 24, 2026 newsletter is ingeste
 Use smartspreads-mcp only. First call verify_newsletter_ingested with no date and tell me the actual latest_ingested_week_ended and source_file. If that is not the newsletter expected for this week, stop and say the new newsletter is not ingested. If it is correct, give me the report requested from that exact issue only.
 ```
 
+### Latest validated watchlist report
+
+```text
+Use smartspreads-mcp only. Do not use memory or prior conversation.
+
+Step 1:
+Call verify_newsletter_ingested with no date. Return the raw JSON.
+
+Step 2:
+Use the verifier output as the watchlist contract:
+- expected_entry_count = verifier.entry_count
+- expected_intra_commodity_count = verifier.section_counts.intra_commodity
+- expected_inter_commodity_count = verifier.section_counts.inter_commodity
+
+Step 3:
+Call get_validated_watchlist_report for verifier.week_ended using those expected counts.
+
+If is_valid is false, stop and report the mismatch. Do not create a report.
+
+If is_valid is true, report only rows returned by entries_by_section.
+For each row print:
+commodity_name | spread_expression | enter_date | exit_date | trade_quality | volatility_structure
+
+Use spread_expression verbatim. Do not split rows into legs. Do not combine intra_commodity and inter_commodity. Do not use rows from memory, prior conversation, other tools, or manually reconstructed tables.
+```
+
 ### Sunday publish workflow
 
 ```text
