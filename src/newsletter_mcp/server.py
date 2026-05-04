@@ -2149,6 +2149,81 @@ def _section_counts(entries: list[WatchlistEntry]) -> dict[str, int]:
     return dict(Counter(entry.section_name for entry in entries))
 
 
+def _watchlist_report_row_from_record(entry: WatchlistEntry) -> dict[str, Any]:
+    legs = _parse_spread_legs(entry.spread_code)
+    reporting_fields = _spread_reporting_fields(entry, legs)
+    return {
+        "commodity_name": entry.commodity_name,
+        "spread_expression": reporting_fields["spread_expression"],
+        "enter_date": entry.enter_date.isoformat(),
+        "exit_date": entry.exit_date.isoformat(),
+        "trade_quality": entry.trade_quality,
+        "volatility_structure": entry.volatility_structure,
+        "section_name": entry.section_name,
+    }
+
+
+def _watchlist_report_signature(row: dict[str, Any]) -> str:
+    fields = [
+        "section_name",
+        "commodity_name",
+        "spread_expression",
+        "enter_date",
+        "exit_date",
+        "trade_quality",
+        "volatility_structure",
+    ]
+    return "|".join(str(row.get(field) or "") for field in fields)
+
+
+def _watchlist_report_fingerprint(rows: list[dict[str, Any]]) -> str:
+    return _sha256_text("\n".join(_watchlist_report_signature(row) for row in rows))
+
+
+def _watchlist_report_rows_from_records(entries: list[WatchlistEntry]) -> list[dict[str, Any]]:
+    return [_watchlist_report_row_from_record(entry) for entry in entries]
+
+
+def _watchlist_report_markdown(entries_by_section: dict[str, list[dict[str, Any]]]) -> str:
+    lines: list[str] = []
+    section_titles = {
+        "intra_commodity": "Intra-Commodity Rows",
+        "inter_commodity": "Inter-Commodity Rows",
+    }
+    ordered_sections = [
+        *[section for section in ("intra_commodity", "inter_commodity") if section in entries_by_section],
+        *sorted(
+            section
+            for section in entries_by_section
+            if section not in {"intra_commodity", "inter_commodity"}
+        ),
+    ]
+    for section in ordered_sections:
+        rows = entries_by_section[section]
+        lines.append(f"### {section_titles.get(section, section)} ({len(rows)})")
+        lines.append("")
+        lines.append("| commodity_name | spread_expression | enter_date | exit_date | trade_quality | volatility_structure |")
+        lines.append("|---|---|---|---|---|---|")
+        for row in rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    str(row.get(field) or "")
+                    for field in [
+                        "commodity_name",
+                        "spread_expression",
+                        "enter_date",
+                        "exit_date",
+                        "trade_quality",
+                        "volatility_structure",
+                    ]
+                )
+                + " |"
+            )
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def _latest_newsletter_record(session: Any) -> Newsletter | None:
     return session.execute(
         select(Newsletter).order_by(desc(Newsletter.week_ended)).limit(1)
@@ -2191,6 +2266,7 @@ def _newsletter_status_payload(
     }
 
     if requested_newsletter is not None:
+        report_rows = _watchlist_report_rows_from_records(requested_entries)
         payload.update(
             {
                 "week_ended": requested_newsletter.week_ended.isoformat(),
@@ -2199,11 +2275,16 @@ def _newsletter_status_payload(
                 "page_count": requested_newsletter.page_count,
                 "entry_count": len(requested_entries),
                 "section_counts": _section_counts(requested_entries),
+                "watchlist_fingerprint": _watchlist_report_fingerprint(report_rows),
+                "watchlist_row_signatures": [
+                    _watchlist_report_signature(row) for row in report_rows
+                ],
                 "has_watchlist_reference": requested_newsletter.watchlist_reference is not None,
             }
         )
     elif latest_newsletter is not None and requested_week_ended is None:
         latest_entries = list(latest_newsletter.watchlist_entries)
+        report_rows = _watchlist_report_rows_from_records(latest_entries)
         payload.update(
             {
                 "week_ended": latest_newsletter.week_ended.isoformat(),
@@ -2212,6 +2293,10 @@ def _newsletter_status_payload(
                 "page_count": latest_newsletter.page_count,
                 "entry_count": len(latest_entries),
                 "section_counts": _section_counts(latest_entries),
+                "watchlist_fingerprint": _watchlist_report_fingerprint(report_rows),
+                "watchlist_row_signatures": [
+                    _watchlist_report_signature(row) for row in report_rows
+                ],
                 "has_watchlist_reference": latest_newsletter.watchlist_reference is not None,
             }
         )
@@ -3183,11 +3268,23 @@ def get_validated_watchlist_report(
     expected_entry_count: int | None = None,
     expected_intra_commodity_count: int | None = None,
     expected_inter_commodity_count: int | None = None,
+    expected_watchlist_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     """Return watchlist rows only after issue and section counts match the expected contract."""
     result = get_watchlist(week_ended=week_ended, include_reference=False)
     entries = result["entries"]
     section_counts = dict(Counter(entry["section_name"] for entry in entries))
+    report_fields = [
+        "commodity_name",
+        "spread_expression",
+        "enter_date",
+        "exit_date",
+        "trade_quality",
+        "volatility_structure",
+        "section_name",
+    ]
+    report_rows = [{field: entry.get(field) for field in report_fields} for entry in entries]
+    watchlist_fingerprint = _watchlist_report_fingerprint(report_rows)
     actual_entry_count = len(entries)
     expected = {
         "entry_count": expected_entry_count,
@@ -3198,12 +3295,21 @@ def get_validated_watchlist_report(
         "entry_count": actual_entry_count,
         "intra_commodity": section_counts.get("intra_commodity", 0),
         "inter_commodity": section_counts.get("inter_commodity", 0),
+        "watchlist_fingerprint": watchlist_fingerprint,
     }
     mismatches = {
         key: {"expected": value, "actual": actual[key]}
         for key, value in expected.items()
         if value is not None and actual[key] != value
     }
+    if (
+        expected_watchlist_fingerprint is not None
+        and watchlist_fingerprint != expected_watchlist_fingerprint
+    ):
+        mismatches["watchlist_fingerprint"] = {
+            "expected": expected_watchlist_fingerprint,
+            "actual": watchlist_fingerprint,
+        }
 
     if mismatches:
         return {
@@ -3213,25 +3319,16 @@ def get_validated_watchlist_report(
             "expected": {key: value for key, value in expected.items() if value is not None},
             "actual": actual,
             "section_counts": section_counts,
+            "watchlist_fingerprint": watchlist_fingerprint,
             "mismatches": mismatches,
             "entries": [],
             "entries_by_section": {},
+            "report_markdown": "",
         }
 
     entries_by_section: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    report_fields = [
-        "commodity_name",
-        "spread_expression",
-        "enter_date",
-        "exit_date",
-        "trade_quality",
-        "volatility_structure",
-        "section_name",
-    ]
-    for entry in entries:
-        entries_by_section[entry["section_name"]].append(
-            {field: entry.get(field) for field in report_fields}
-        )
+    for row in report_rows:
+        entries_by_section[row["section_name"]].append(row)
 
     return {
         "is_valid": True,
@@ -3239,8 +3336,10 @@ def get_validated_watchlist_report(
         "message": "Watchlist contract validated. Rows are safe to report.",
         "actual": actual,
         "section_counts": section_counts,
-        "entries": [{field: entry.get(field) for field in report_fields} for entry in entries],
+        "watchlist_fingerprint": watchlist_fingerprint,
+        "entries": report_rows,
         "entries_by_section": dict(entries_by_section),
+        "report_markdown": _watchlist_report_markdown(dict(entries_by_section)),
     }
 
 

@@ -149,15 +149,14 @@ Use the verifier output as the watchlist contract:
 - expected_entry_count = verifier.entry_count
 - expected_intra_commodity_count = verifier.section_counts.intra_commodity
 - expected_inter_commodity_count = verifier.section_counts.inter_commodity
+- expected_watchlist_fingerprint = verifier.watchlist_fingerprint
 
 Step 3:
-Call get_validated_watchlist_report for verifier.week_ended using those expected counts.
+Call get_validated_watchlist_report for verifier.week_ended using those expected counts and expected_watchlist_fingerprint.
 
 If is_valid is false, stop and report the mismatch. Do not create a report.
 
-If is_valid is true, report only rows returned by entries_by_section.
-For each row print:
-commodity_name | spread_expression | enter_date | exit_date | trade_quality | volatility_structure
+If is_valid is true, output report_markdown exactly as returned by the tool. Do not rebuild the table yourself.
 
 Use spread_expression verbatim. Do not split rows into legs. Do not combine intra_commodity and inter_commodity. Do not use rows from memory, prior conversation, other tools, or manually reconstructed tables.
 ```

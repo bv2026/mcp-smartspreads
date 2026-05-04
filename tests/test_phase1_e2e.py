@@ -203,6 +203,8 @@ class Phase1EndToEndTests(unittest.TestCase):
         self.assertTrue(latest["is_ingested"])
         self.assertEqual(latest["latest_ingested_week_ended"], "2026-04-10")
         self.assertEqual(latest["entry_count"], 2)
+        self.assertIn("watchlist_fingerprint", latest)
+        self.assertEqual(len(latest["watchlist_row_signatures"]), 2)
 
     def test_watchlist_serialization_includes_one_spread_reporting_expression(self) -> None:
         parsed = _make_parsed_newsletter(self.base_dir)
@@ -234,22 +236,29 @@ class Phase1EndToEndTests(unittest.TestCase):
             expected_entry_count=2,
             expected_intra_commodity_count=2,
             expected_inter_commodity_count=0,
+            expected_watchlist_fingerprint=server.verify_newsletter_ingested()[
+                "watchlist_fingerprint"
+            ],
         )
         self.assertTrue(valid["is_valid"])
         self.assertEqual(valid["actual"]["entry_count"], 2)
         self.assertEqual(len(valid["entries"]), 2)
         self.assertEqual(len(valid["entries_by_section"]["intra_commodity"]), 2)
+        self.assertIn("Intra-Commodity Rows (2)", valid["report_markdown"])
 
         invalid = server.get_validated_watchlist_report(
             "2026-04-10",
             expected_entry_count=31,
             expected_intra_commodity_count=21,
             expected_inter_commodity_count=10,
+            expected_watchlist_fingerprint="not-the-fingerprint",
         )
         self.assertFalse(invalid["is_valid"])
         self.assertEqual(invalid["entries"], [])
         self.assertEqual(invalid["entries_by_section"], {})
+        self.assertEqual(invalid["report_markdown"], "")
         self.assertEqual(invalid["mismatches"]["entry_count"], {"expected": 31, "actual": 2})
+        self.assertIn("watchlist_fingerprint", invalid["mismatches"])
 
 
 if __name__ == "__main__":
