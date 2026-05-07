@@ -93,12 +93,14 @@ If any of these are true, stop immediately and report SCHWAB POSITION DATA STALE
 - stale_stream_marks > 0
 - warning contains "Do NOT use for trade decisions"
 - any leg has mark_source = stream_stale
-- any leg has mark_source = tos_csv_fallback
 - position_source = tos_csv_rejected_stale
 - error = STALE_TOS_CSV_POSITION_SOURCE
 
 Accept position_source = stream_positions when statement_date is today and stale_stream_marks = 0.
 Accept source = stream_positions when all current legs use live_stream marks.
+Accept mark_source = tos_csv_fallback only when statement_date is today, warning is absent, and pricing_note says the marks are today's TOS CSV statement marks. This is not stale position data. It is acceptable for current position/exit schedule work, but pricing conclusions are statement-snapshot confidence, not live-stream confidence.
+
+If csv_marks > 0 or pricing_note is present, continue to Step 3 and Step 5. Do not stop. In the final verdict, say POSITION/EXIT SCHEDULE PASS WITH SNAPSHOT PRICING NOTE.
 
 Step 3:
 Print every current futures leg exactly as returned:
@@ -139,7 +141,9 @@ PASS if:
 
 DATA QUALITY ISSUE if Schwab is fresh but a current spread summary has an error or a null spread_id/spread_name.
 
-FAIL if Claude uses stale schema, fails Schwab auth, uses stale Schwab data, uses CSV fallback as current positions, uses memory, or includes any spread not present in current tool output.
+POSITION/EXIT SCHEDULE PASS WITH SNAPSHOT PRICING NOTE if the only non-live condition is current-day tos_csv_fallback marks with no stale warning. Continue through the exit schedule and clearly say pricing is statement-snapshot confidence, not live-stream confidence.
+
+FAIL if Claude uses stale schema, fails Schwab auth, uses stale Schwab data, uses stale CSV as current positions, uses memory, or includes any spread not present in current tool output.
 ```
 
 ## Quiet mode prefix
