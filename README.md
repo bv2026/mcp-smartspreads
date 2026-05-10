@@ -21,22 +21,29 @@ What still remains after this sprint:
 
 ## Project Docs
 
-- [`DESIGN.md`](./DESIGN.md) for architecture and schema decisions
-- [`USAGE.md`](./USAGE.md) for setup, MCP queries, and export workflows
-- [`PROMPTS.md`](./PROMPTS.md) for reusable prompt patterns
-- [`CLAUDE_CHEAT_SHEET.md`](./CLAUDE_CHEAT_SHEET.md) for a short copy-paste guide for Claude workflows
-- [`CLAUDE_PROJECT_INSTRUCTIONS.md`](./CLAUDE_PROJECT_INSTRUCTIONS.md) for the recommended short Claude Project Instructions
-- [`TEST_PROMPTS.md`](./TEST_PROMPTS.md) for reliable intelligence-testing prompts and prompts to avoid
-- [`PHASED_ARCHITECTURE.md`](./PHASED_ARCHITECTURE.md) for the two-workflow, two-phase system design
-- [`docs/newsletter-intelligence-plan.md`](./docs/newsletter-intelligence-plan.md) for the implementation sequence of newsletter intelligence
-- [`docs/phase1-database-schema.md`](./docs/phase1-database-schema.md) for the concrete Phase 1 schema design
-- [`docs/publication-contract.md`](./docs/publication-contract.md) for the published file contract and downstream handoff
-- [`docs/business-layer-design.md`](./docs/business-layer-design.md) for the first business/intelligence layer design above the parser and DB
-- [`docs/daily-workflow-design.md`](./docs/daily-workflow-design.md) for the Daily operational design built on Schwab MCP plus Newsletter intelligence
-- [`docs/symbol-catalog-design.md`](./docs/symbol-catalog-design.md) for the DB-backed Schwab/newsletter symbol normalization layer
-- [`docs/strategy-knowledge-design.md`](./docs/strategy-knowledge-design.md) for the strategy/doctrine knowledge layer built from the Smart Spreads strategy manual
-- [`docs/phase3-principle-integration-design.md`](./docs/phase3-principle-integration-design.md) for the Phase 3 principle-evaluation, publication, and Daily integration design
-- [`docs/claude-project-instructions-reference.md`](./docs/claude-project-instructions-reference.md) for how to migrate old Claude project instructions to the current system
+All documentation lives in [`docs/`](./docs/):
+
+- [DESIGN.md](./docs/DESIGN.md) — architecture and schema decisions
+- [USAGE.md](./docs/USAGE.md) — setup, MCP queries, and export workflows
+- [PHASED_ARCHITECTURE.md](./docs/PHASED_ARCHITECTURE.md) — two-workflow, two-phase system design
+- [PROMPTS.md](./docs/PROMPTS.md) — reusable prompt patterns
+- [CLAUDE_CHEAT_SHEET.md](./docs/CLAUDE_CHEAT_SHEET.md) — copy-paste guide for Claude workflows
+- [CLAUDE_PROJECT_INSTRUCTIONS.md](./docs/CLAUDE_PROJECT_INSTRUCTIONS.md) — recommended Claude Project Instructions
+- [TEST_PROMPTS.md](./docs/TEST_PROMPTS.md) — intelligence-testing prompts
+- [DEPLOY_LOCAL.md](./docs/DEPLOY_LOCAL.md) — local deployment guide
+- [CLIENT_CONFIG.md](./docs/CLIENT_CONFIG.md) — client configuration
+- [BACKLOG.md](./docs/BACKLOG.md) / [ROADMAP.md](./docs/ROADMAP.md) — project planning
+- Design docs: `phase1-database-schema`, `publication-contract`, `business-layer-design`, `daily-workflow-design`, `symbol-catalog-design`, `strategy-knowledge-design`, `phase3-principle-integration-design`, `claude-project-instructions-reference`, `newsletter-intelligence-plan`
+
+## Offline CLI
+
+When Claude Code is unavailable (rate limits exhausted, outages), use the menu-driven CLI:
+
+```bash
+python scripts/smartspreads_cli.py
+```
+
+Provides direct access to all 25 MCP tool functions: newsletter ingestion, watchlist queries, exports, publication, catalog management, and strategy doctrine.
 
 ## Recommendation
 
