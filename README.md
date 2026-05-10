@@ -23,17 +23,16 @@ What still remains after this sprint:
 
 All documentation lives in [`docs/`](./docs/):
 
+- [SETUP.md](./docs/SETUP.md) — local deployment and MCP client configuration
 - [DESIGN.md](./docs/DESIGN.md) — architecture and schema decisions
-- [USAGE.md](./docs/USAGE.md) — setup, MCP queries, and export workflows
+- [USAGE.md](./docs/USAGE.md) — MCP queries and export workflows
 - [PHASED_ARCHITECTURE.md](./docs/PHASED_ARCHITECTURE.md) — two-workflow, two-phase system design
-- [PROMPTS.md](./docs/PROMPTS.md) — reusable prompt patterns
-- [CLAUDE_CHEAT_SHEET.md](./docs/CLAUDE_CHEAT_SHEET.md) — copy-paste guide for Claude workflows
+- [PROMPTS.md](./docs/PROMPTS.md) — reusable prompt patterns (Sunday, Daily, intelligence, strategy)
 - [CLAUDE_PROJECT_INSTRUCTIONS.md](./docs/CLAUDE_PROJECT_INSTRUCTIONS.md) — recommended Claude Project Instructions
 - [TEST_PROMPTS.md](./docs/TEST_PROMPTS.md) — intelligence-testing prompts
-- [DEPLOY_LOCAL.md](./docs/DEPLOY_LOCAL.md) — local deployment guide
-- [CLIENT_CONFIG.md](./docs/CLIENT_CONFIG.md) — client configuration
-- [BACKLOG.md](./docs/BACKLOG.md) / [ROADMAP.md](./docs/ROADMAP.md) — project planning
-- Design docs: `phase1-database-schema`, `publication-contract`, `business-layer-design`, `daily-workflow-design`, `symbol-catalog-design`, `strategy-knowledge-design`, `phase3-principle-integration-design`, `claude-project-instructions-reference`, `newsletter-intelligence-plan`
+- [BACKLOG.md](./docs/BACKLOG.md) — milestones, priorities, and roadmap
+- [NEXT_SESSION_HANDOFF.md](./docs/NEXT_SESSION_HANDOFF.md) — session handoff template
+- Design docs: `phase1-database-schema`, `publication-contract`, `business-layer-design`, `daily-workflow-design`, `symbol-catalog-design`, `strategy-knowledge-design`, `phase3-principle-integration-design`
 
 ## Offline CLI
 
@@ -132,6 +131,13 @@ For this use case, I recommend:
 - Spread leg interpretation rules
 - Tier / volatility / portfolio interpretation notes
 
+### Watchlist reporting contract
+
+- `section_name` is authoritative: keep `intra_commodity` and `inter_commodity` rows separate.
+- `spread_expression` is the canonical human-readable trade expression, such as `BUY (CZ26 - 2*CN27 + CZ27)`.
+- `side` applies to the complete spread formula, not to independently generated leg commentary.
+- `spread_type` describes the row shape only; downstream reports should not split one row into separate calendar/butterfly recommendations.
+
 ## Setup
 
 1. Create a virtual environment.
@@ -191,6 +197,7 @@ For local-only testing, keep the default SQLite URL from `.env.example`.
 - `publish_issue(week_ended, output_dir=None, publication_version=None, published_by=None)` writes the current issue into the `published/` contract files and records a publication run
 - `refresh_and_publish_issue(week_ended, output_dir=None, publication_version=None, published_by=None)` rebuilds issue intelligence, reruns current scoring logic, and republishes the approved issue
 - `list_issues(limit=10)` returns recently imported issues
+- `verify_newsletter_ingested(week_ended=None)` verifies a requested issue exists before reporting; with no date, returns the latest ingested issue and source file
 - `get_issue_summary(week_ended)` returns the issue summary and section summaries
 - `get_watchlist(week_ended, min_trade_quality=None, include_reference=True)` returns structured watchlist rows and can include the issue's watchlist reference block for export/report workflows
 - `export_watchlist_csv(week_ended, section_name=None, min_trade_quality=None, include_reference=True, output_path=None, reference_output_path=None)` returns CSV-ready watchlist rows, can filter to `intra_commodity` or `inter_commodity`, and can write the CSV/reference files directly
