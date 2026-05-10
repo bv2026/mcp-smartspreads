@@ -43,10 +43,98 @@ def _get_server():
     return _server
 
 
-def _format_result(result: Any) -> str:
+def _format_json(result: Any) -> str:
     if isinstance(result, (dict, list)):
         return json.dumps(result, indent=2, default=str)
     return str(result)
+
+
+def _md_table(rows: list[dict[str, Any]], columns: list[str] | None = None) -> str:
+    if not rows:
+        return "*No data*\n"
+    cols = columns or list(rows[0].keys())
+    header = "| " + " | ".join(cols) + " |"
+    sep = "| " + " | ".join("---" for _ in cols) + " |"
+    lines = [header, sep]
+    for row in rows:
+        vals = []
+        for c in cols:
+            v = row.get(c, "")
+            v = str(v) if v is not None else ""
+            if len(v) > 80:
+                v = v[:77] + "..."
+            v = v.replace("|", "/").replace("\n", " ")
+            vals.append(v)
+        lines.append("| " + " | ".join(vals) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def _md_kv(data: dict[str, Any], skip_nested: bool = False) -> str:
+    lines = []
+    for k, v in data.items():
+        if skip_nested and isinstance(v, (dict, list)):
+            continue
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            continue
+        if isinstance(v, dict):
+            lines.append(f"- **{k}:** *(nested object, see details below)*")
+        elif isinstance(v, list):
+            lines.append(f"- **{k}:** {len(v)} items")
+        else:
+            lines.append(f"- **{k}:** {v}")
+    return "\n".join(lines) + "\n"
+
+
+def _build_report_md(func_name: str, result: Any) -> str:
+    now = datetime.now()
+    sections = [
+        f"# {func_name.replace('_', ' ').title()}",
+        "",
+        f"| Field | Value |",
+        f"| --- | --- |",
+        f"| Function | `{func_name}` |",
+        f"| Generated | {now.strftime('%Y-%m-%d %H:%M:%S')} |",
+        "",
+    ]
+
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        sections.append(f"## Results ({len(result)} rows)\n")
+        sections.append(_md_table(result))
+    elif isinstance(result, dict):
+        nested_lists = {
+            k: v for k, v in result.items()
+            if isinstance(v, list) and v and isinstance(v[0], dict)
+        }
+        nested_dicts = {
+            k: v for k, v in result.items()
+            if isinstance(v, dict)
+        }
+        scalar_fields = {
+            k: v for k, v in result.items()
+            if k not in nested_lists and k not in nested_dicts
+        }
+
+        if scalar_fields:
+            sections.append("## Summary\n")
+            sections.append(_md_kv(scalar_fields))
+
+        for key, rows in nested_lists.items():
+            sections.append(f"\n## {key.replace('_', ' ').title()} ({len(rows)} rows)\n")
+            sections.append(_md_table(rows))
+
+        for key, obj in nested_dicts.items():
+            sections.append(f"\n## {key.replace('_', ' ').title()}\n")
+            sections.append(_md_kv(obj))
+    else:
+        sections.append(f"## Output\n\n{result}\n")
+
+    sections.append("\n---\n")
+    sections.append(
+        "<details><summary>Raw JSON</summary>\n\n"
+        f"```json\n{_format_json(result)}\n```\n\n"
+        "</details>\n"
+    )
+    return "\n".join(sections)
 
 
 def _save_report(func_name: str, result: Any) -> Path:
@@ -54,21 +142,14 @@ def _save_report(func_name: str, result: Any) -> Path:
     ts = datetime.now().strftime("%H%M%S")
     report_dir = REPORTS_ROOT / today
     report_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"TS-{func_name}-{ts}.md"
+    filename = f"{func_name}-{ts}.md"
     path = report_dir / filename
-    content = _format_result(result)
-    path.write_text(
-        f"# {func_name}\n\n"
-        f"**Generated:** {datetime.now().isoformat()}\n\n"
-        f"```json\n{content}\n```\n",
-        encoding="utf-8",
-    )
+    path.write_text(_build_report_md(func_name, result), encoding="utf-8")
     return path
 
 
 def _run_and_report(func_name: str, result: Any) -> None:
-    content = _format_result(result)
-    print(content)
+    print(_format_json(result))
     path = _save_report(func_name, result)
     print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
@@ -324,7 +405,7 @@ LAYERS = [
 def print_top_menu():
     print("\n" + "=" * 60)
     print("  SmartSpreads CLI - Offline MCP Tool Runner")
-    print("  Reports saved to: reports/<date>/TS-<name>-<time>.md")
+    print("  Reports saved to: reports/<date>/<name>-<HHMMSS>.md")
     print("=" * 60)
     for key, name, _ in LAYERS:
         print(f"    {key}. {name}")
