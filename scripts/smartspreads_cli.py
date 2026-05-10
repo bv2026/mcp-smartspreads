@@ -129,11 +129,6 @@ def _build_report_md(func_name: str, result: Any) -> str:
         sections.append(f"## Output\n\n{result}\n")
 
     sections.append("\n---\n")
-    sections.append(
-        "<details><summary>Raw JSON</summary>\n\n"
-        f"```json\n{_format_json(result)}\n```\n\n"
-        "</details>\n"
-    )
     return "\n".join(sections)
 
 
