@@ -7,29 +7,46 @@ should open this file first to understand current project state and priorities.
 
 ## Current version
 
-<!-- Update this after each handoff -->
-Version: (not yet written)
-Date: (not yet written)
+Version: v0.2
+Date: 2026-05-10
 
 ## 1. Project state summary
 
-<!-- What is the current state of the project? What was completed recently? -->
+Sunday and Daily Phase 3 flows are working end to end. Unified CLI (SmartSpreads + Schwab) is operational with 5 layers (A-E). Docs consolidated (7 files archived, prompts merged). Report directory restructured: issue reports by `week_ended`, Schwab snapshots by calendar date, management reports overwrite in place.
 
 ## 2. Architecture / module changes
 
-<!-- Any new modules, renamed files, schema changes, or dependency changes since last handoff? -->
+- `scripts/smartspreads_cli.py` — rewritten from 4 layers to 5 layers (A-E), now bridges both MCPs
+- Schwab tools imported directly from `schwab_mcp.tools.*` (all sync, no async wrappers needed)
+- Schwab `.env` loaded lazily on first D/E layer access
+- `docs/SETUP.md` — merged from CLIENT_CONFIG.md + DEPLOY_LOCAL.md
+- `docs/CLI.md` — new, unified CLI usage guide
+- 7 docs archived to `docs/archive/`
 
 ## 3. Database / content state
 
-<!-- Current DB counts, latest ingested issue, latest published issue -->
+<!-- Update these counts after each session -->
+- DB: newsletters=~20, watchlist_entries=~280, strategy_principles=7
+- Newsletter coverage: 2025-12-26 to 2026-05-08
+- Latest published: 2026-05-08 (12 entries, 8 intra + 4 inter)
+- Tests: 31+ passing
 
 ## 4. Current risks / friction points
 
-<!-- Known bugs, parser issues, calibration concerns, unresolved contracts -->
+1. Parser remains regex-heavy, narrative summaries noisy/OCR-sensitive
+2. Gasoil is unresolved/untradeable for TOS
+3. Schema evolution is runtime/additive, not migration-first
+4. Daily persistence not yet started (`portfolio_fit_reviews` is the leading candidate)
+5. Principle calibration active work (`volatility_as_constraint` can over-block)
+6. Streaming tools not available in CLI mode — REST alternatives cover most needs
 
 ## 5. Next priorities
 
-<!-- Ordered list of what should be worked on next -->
+1. Parser tests and validation hardening
+2. Richer validation reporting
+3. First Daily persistence layer (`portfolio_fit_reviews`)
+4. Live calibration of principle scoring
+5. Schema migrations
 
 ## 6. Quick-start commands
 
@@ -49,7 +66,7 @@ python scripts/smartspreads_cli.py
 
 ## 7. Session opener prompt
 
-<!-- A copy-paste prompt to resume quickly in Claude -->
+> Open `docs/NEXT_SESSION_HANDOFF.md` and `docs/CLI.md`. Review current state, risks, and priorities. Then check `git log --oneline -10` for recent changes. Ask me what to work on.
 
 ## Archived handoffs
 
