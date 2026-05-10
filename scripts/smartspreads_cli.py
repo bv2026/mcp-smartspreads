@@ -55,11 +55,6 @@ def _get_latest_week_ended() -> str:
     return _latest_week_ended
 
 
-def _prompt_week(msg: str = "Week ended date") -> str:
-    default = _get_latest_week_ended()
-    return _prompt(msg, default)
-
-
 def _format_json(result: Any) -> str:
     if isinstance(result, (dict, list)):
         return json.dumps(result, indent=2, default=str)
@@ -86,15 +81,13 @@ def _md_table(rows: list[dict[str, Any]], columns: list[str] | None = None) -> s
     return "\n".join(lines) + "\n"
 
 
-def _md_kv(data: dict[str, Any], skip_nested: bool = False) -> str:
+def _md_kv(data: dict[str, Any]) -> str:
     lines = []
     for k, v in data.items():
-        if skip_nested and isinstance(v, (dict, list)):
-            continue
         if isinstance(v, list) and v and isinstance(v[0], dict):
             continue
         if isinstance(v, dict):
-            lines.append(f"- **{k}:** *(nested object, see details below)*")
+            lines.append(f"- **{k}:** *(see details below)*")
         elif isinstance(v, list):
             lines.append(f"- **{k}:** {len(v)} items")
         else:
@@ -151,7 +144,7 @@ def _build_report_md(func_name: str, result: Any) -> str:
 
 def _save_report(func_name: str, result: Any,
                  issue_date: str | None = None) -> Path:
-    nl_date = issue_date or _get_latest_week_ended()
+    nl_date = issue_date or date.today().isoformat()
     report_dir = REPORTS_ROOT / nl_date
     report_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{nl_date}-{func_name}.md"
@@ -178,9 +171,9 @@ def _prompt_optional(msg: str) -> str | None:
     return val or None
 
 
-# ---------------------------------------------------------------------------
-# Layer 1: Newsletter Management
-# ---------------------------------------------------------------------------
+# ===================================================================
+# A - Newsletter Management
+# ===================================================================
 
 def do_list_issues():
     limit = int(_prompt("How many issues", "10"))
@@ -188,10 +181,9 @@ def do_list_issues():
 
 
 def do_verify_newsletter():
-    week = _prompt_week()
+    week = _prompt_optional("Week ended date (YYYY-MM-DD)")
     _run_and_report("verify_newsletter_ingested",
-                    _get_server().verify_newsletter_ingested(week_ended=week),
-                    issue_date=week)
+                    _get_server().verify_newsletter_ingested(week_ended=week))
 
 
 def do_ingest_newsletter():
@@ -205,121 +197,9 @@ def do_ingest_pending():
                     _get_server().ingest_pending_newsletters())
 
 
-def do_get_issue_summary():
-    week = _prompt_week()
-    _run_and_report("get_issue_summary",
-                    _get_server().get_issue_summary(week_ended=week),
-                    issue_date=week)
-
-
-# ---------------------------------------------------------------------------
-# Layer 2: Watchlist & Reporting
-# ---------------------------------------------------------------------------
-
-def do_get_watchlist():
-    week = _prompt_week()
-    quality = _prompt_optional("Min trade quality (e.g. 'Tier 2')")
-    _run_and_report("get_watchlist",
-                    _get_server().get_watchlist(week_ended=week,
-                                               min_trade_quality=quality),
-                    issue_date=week)
-
-
-def do_get_watchlist_reference():
-    week = _prompt_week()
-    _run_and_report("get_watchlist_reference",
-                    _get_server().get_watchlist_reference(week_ended=week),
-                    issue_date=week)
-
-
-def do_get_validated_report():
-    week = _prompt_week()
-    _run_and_report("get_validated_watchlist_report",
-                    _get_server().get_validated_watchlist_report(week_ended=week),
-                    issue_date=week)
-
-
-def do_publish_issue():
-    week = _prompt_week()
-    out = _prompt_optional("Output directory")
-    _run_and_report("publish_issue",
-                    _get_server().publish_issue(week_ended=week, output_dir=out),
-                    issue_date=week)
-
-
-def do_refresh_and_publish():
-    week = _prompt_week()
-    out = _prompt_optional("Output directory")
-    _run_and_report("refresh_and_publish_issue",
-                    _get_server().refresh_and_publish_issue(week_ended=week,
-                                                           output_dir=out),
-                    issue_date=week)
-
-
-# ---------------------------------------------------------------------------
-# Layer 3: Export
-# ---------------------------------------------------------------------------
-
-def do_export_csv():
-    week = _prompt_week()
-    section = _prompt_optional("Section name filter")
-    quality = _prompt_optional("Min trade quality")
-    out_path = _prompt_optional("Output CSV path")
-    _run_and_report("export_watchlist_csv",
-                    _get_server().export_watchlist_csv(
-                        week_ended=week, section_name=section,
-                        min_trade_quality=quality, output_path=out_path),
-                    issue_date=week)
-
-
-def do_export_package():
-    week = _prompt_week()
-    out = _prompt_optional("Output directory")
-    _run_and_report("export_watchlist_package",
-                    _get_server().export_watchlist_package(week_ended=week,
-                                                          output_dir=out),
-                    issue_date=week)
-
-
-def do_export_bundle():
-    date_from = _prompt("Date from (YYYY-MM-DD)")
-    date_to = _prompt("Date to (YYYY-MM-DD)")
-    out = _prompt_optional("Output directory")
-    _run_and_report("export_watchlist_bundle",
-                    _get_server().export_watchlist_bundle(
-                        date_from=date_from, date_to=date_to, output_dir=out))
-
-
-# ---------------------------------------------------------------------------
-# Layer 4: Intelligence & Backfill
-# ---------------------------------------------------------------------------
-
 def do_backfill_intelligence():
     _run_and_report("backfill_phase1_intelligence",
                     _get_server().backfill_phase1_intelligence())
-
-
-def do_exit_schedule():
-    print("  Enter positions as JSON array (e.g. "
-          '[{"symbol": "/ZCZ26-/ZCH27"}]):')
-    raw = input("  > ").strip()
-    positions = json.loads(raw) if raw else []
-    as_of = _prompt("As-of date", date.today().isoformat())
-    _run_and_report("resolve_open_position_exit_schedule",
-                    _get_server().resolve_open_position_exit_schedule(
-                        positions=positions, as_of=as_of))
-
-
-# ---------------------------------------------------------------------------
-# Layer 5: Catalogs & Mappings
-# ---------------------------------------------------------------------------
-
-def do_list_schwab_catalog():
-    limit = int(_prompt("Limit", "25"))
-    cat = _prompt_optional("Category filter")
-    _run_and_report("list_schwab_futures_catalog",
-                    _get_server().list_schwab_futures_catalog(limit=limit,
-                                                             category=cat))
 
 
 def do_import_schwab_catalog():
@@ -328,51 +208,22 @@ def do_import_schwab_catalog():
                     _get_server().import_schwab_futures_catalog(csv_path=path))
 
 
-def do_list_commodity_catalog():
+def do_schwab_catalog():
+    limit = int(_prompt("Limit", "25"))
+    cat = _prompt_optional("Category filter")
+    _run_and_report("list_schwab_futures_catalog",
+                    _get_server().list_schwab_futures_catalog(limit=limit,
+                                                             category=cat))
+
+
+def do_commodity_catalog():
     _run_and_report("list_newsletter_commodity_catalog",
                     _get_server().list_newsletter_commodity_catalog())
 
 
-def do_import_commodity_catalog():
-    week = _prompt_week("Week ended")
-    _run_and_report("import_newsletter_commodity_catalog",
-                    _get_server().import_newsletter_commodity_catalog(
-                        week_ended=week),
-                    issue_date=week)
-
-
-def do_list_contract_codes():
+def do_contract_codes():
     _run_and_report("list_contract_month_codes",
                     _get_server().list_contract_month_codes())
-
-
-def do_import_contract_codes():
-    week = _prompt_week("Week ended")
-    _run_and_report("import_contract_month_codes",
-                    _get_server().import_contract_month_codes(week_ended=week),
-                    issue_date=week)
-
-
-# ---------------------------------------------------------------------------
-# Layer 6: Strategy & Doctrine
-# ---------------------------------------------------------------------------
-
-def do_list_strategy_docs():
-    _run_and_report("list_strategy_documents",
-                    _get_server().list_strategy_documents())
-
-
-def do_list_strategy_sections():
-    ch = _prompt_optional("Chapter number")
-    _run_and_report("list_strategy_sections",
-                    _get_server().list_strategy_sections(
-                        chapter_number=int(ch) if ch else None))
-
-
-def do_list_strategy_principles():
-    cat = _prompt_optional("Category filter")
-    _run_and_report("list_strategy_principles",
-                    _get_server().list_strategy_principles(category=cat))
 
 
 def do_import_strategy_manual():
@@ -381,88 +232,175 @@ def do_import_strategy_manual():
                     _get_server().import_strategy_manual(pdf_path=path))
 
 
-# ---------------------------------------------------------------------------
-# Menu structure - layered
-# ---------------------------------------------------------------------------
+def do_strategy_principles():
+    cat = _prompt_optional("Category filter")
+    _run_and_report("list_strategy_principles",
+                    _get_server().list_strategy_principles(category=cat))
 
-LAYERS = [
-    ("A", "Newsletter Management", [
-        ("1", "List issues", do_list_issues),
-        ("2", "Verify newsletter ingested", do_verify_newsletter),
-        ("3", "Ingest single newsletter PDF", do_ingest_newsletter),
-        ("4", "Ingest all pending newsletters", do_ingest_pending),
-        ("5", "Get issue summary", do_get_issue_summary),
-    ]),
-    ("B", "Watchlist & Reporting", [
-        ("1", "Get watchlist", do_get_watchlist),
-        ("2", "Get watchlist reference", do_get_watchlist_reference),
-        ("3", "Get validated watchlist report", do_get_validated_report),
-        ("4", "Publish issue", do_publish_issue),
-        ("5", "Refresh & publish issue", do_refresh_and_publish),
-    ]),
-    ("C", "Export", [
-        ("1", "Export watchlist CSV", do_export_csv),
-        ("2", "Export watchlist package", do_export_package),
-        ("3", "Export watchlist bundle (date range)", do_export_bundle),
-    ]),
-    ("D", "Intelligence & Backfill", [
-        ("1", "Backfill Phase 1 intelligence", do_backfill_intelligence),
-        ("2", "Resolve exit schedule", do_exit_schedule),
-    ]),
-    ("E", "Catalogs & Mappings", [
-        ("1", "List Schwab futures catalog", do_list_schwab_catalog),
-        ("2", "Import Schwab futures catalog", do_import_schwab_catalog),
-        ("3", "List commodity catalog", do_list_commodity_catalog),
-        ("4", "Import commodity catalog", do_import_commodity_catalog),
-        ("5", "List contract month codes", do_list_contract_codes),
-        ("6", "Import contract month codes", do_import_contract_codes),
-    ]),
-    ("F", "Strategy & Doctrine", [
-        ("1", "List strategy documents", do_list_strategy_docs),
-        ("2", "List strategy sections", do_list_strategy_sections),
-        ("3", "List strategy principles", do_list_strategy_principles),
-        ("4", "Import strategy manual", do_import_strategy_manual),
-    ]),
+
+LAYER_A_ITEMS = [
+    ("1", "List issues", do_list_issues),
+    ("2", "Verify newsletter ingested", do_verify_newsletter),
+    ("3", "Ingest single newsletter PDF", do_ingest_newsletter),
+    ("4", "Ingest all pending newsletters", do_ingest_pending),
+    ("5", "Backfill intelligence (maintenance)", do_backfill_intelligence),
+    ("6", "Import Schwab futures catalog", do_import_schwab_catalog),
+    ("7", "View Schwab futures catalog", do_schwab_catalog),
+    ("8", "View commodity catalog", do_commodity_catalog),
+    ("9", "View contract month codes", do_contract_codes),
+    ("10", "Import strategy manual", do_import_strategy_manual),
+    ("11", "View strategy principles", do_strategy_principles),
 ]
 
+
+# ===================================================================
+# B - Newsletter Analysis (issue date set once at entry)
+# ===================================================================
+
+_active_issue_date: str | None = None
+
+
+def _issue_date() -> str:
+    assert _active_issue_date is not None
+    return _active_issue_date
+
+
+def do_issue_summary():
+    _run_and_report("get_issue_summary",
+                    _get_server().get_issue_summary(week_ended=_issue_date()),
+                    issue_date=_issue_date())
+
+
+def do_watchlist():
+    quality = _prompt_optional("Min trade quality (e.g. 'Tier 2')")
+    _run_and_report("get_watchlist",
+                    _get_server().get_watchlist(week_ended=_issue_date(),
+                                               min_trade_quality=quality),
+                    issue_date=_issue_date())
+
+
+def do_watchlist_reference():
+    _run_and_report("get_watchlist_reference",
+                    _get_server().get_watchlist_reference(
+                        week_ended=_issue_date()),
+                    issue_date=_issue_date())
+
+
+def do_validated_report():
+    _run_and_report("get_validated_watchlist_report",
+                    _get_server().get_validated_watchlist_report(
+                        week_ended=_issue_date()),
+                    issue_date=_issue_date())
+
+
+def do_exit_schedule():
+    print("  Enter positions as JSON array "
+          '(e.g. [{"symbol": "/ZCZ26-/ZCH27"}]):')
+    raw = input("  > ").strip()
+    positions = json.loads(raw) if raw else []
+    as_of = _prompt("As-of date", date.today().isoformat())
+    _run_and_report("resolve_open_position_exit_schedule",
+                    _get_server().resolve_open_position_exit_schedule(
+                        positions=positions, as_of=as_of),
+                    issue_date=_issue_date())
+
+
+def do_export_csv():
+    section = _prompt_optional("Section name filter")
+    quality = _prompt_optional("Min trade quality")
+    out_path = _prompt_optional("Output CSV path")
+    _run_and_report("export_watchlist_csv",
+                    _get_server().export_watchlist_csv(
+                        week_ended=_issue_date(), section_name=section,
+                        min_trade_quality=quality, output_path=out_path),
+                    issue_date=_issue_date())
+
+
+def do_export_bundle():
+    date_from = _prompt("Date from (YYYY-MM-DD)")
+    date_to = _prompt("Date to", _issue_date())
+    out = _prompt_optional("Output directory")
+    _run_and_report("export_watchlist_bundle",
+                    _get_server().export_watchlist_bundle(
+                        date_from=date_from, date_to=date_to, output_dir=out),
+                    issue_date=_issue_date())
+
+
+def do_publish():
+    out = _prompt_optional("Output directory")
+    _run_and_report("publish_issue",
+                    _get_server().publish_issue(
+                        week_ended=_issue_date(), output_dir=out),
+                    issue_date=_issue_date())
+
+
+def do_refresh_and_publish():
+    out = _prompt_optional("Output directory")
+    _run_and_report("refresh_and_publish_issue",
+                    _get_server().refresh_and_publish_issue(
+                        week_ended=_issue_date(), output_dir=out),
+                    issue_date=_issue_date())
+
+
+LAYER_B_ITEMS = [
+    ("1", "Issue summary", do_issue_summary),
+    ("2", "Watchlist", do_watchlist),
+    ("3", "Watchlist reference", do_watchlist_reference),
+    ("4", "Validated watchlist report", do_validated_report),
+    ("5", "Exit schedule", do_exit_schedule),
+    ("6", "Export watchlist CSV", do_export_csv),
+    ("7", "Export watchlist bundle (date range)", do_export_bundle),
+    ("8", "Publish issue", do_publish),
+    ("9", "Refresh & publish issue", do_refresh_and_publish),
+]
+
+
+# ===================================================================
+# Menu engine
+# ===================================================================
 
 def print_top_menu():
     print("\n" + "=" * 60)
     print("  SmartSpreads CLI - Offline MCP Tool Runner")
-    print("  Reports saved to: reports/<issue-date>/<issue-date>-<func>.md")
+    print("  Reports: reports/<issue-date>/<issue-date>-<func>.md")
     print("=" * 60)
-    for key, name, _ in LAYERS:
-        print(f"    {key}. {name}")
-    print(f"\n    q. Quit")
+    print("    A. Newsletter Management & Reference")
+    print("    B. Newsletter Analysis")
+    print("\n    q. Quit")
     print("=" * 60)
 
 
-def print_layer_menu(key: str, name: str, items: list):
-    print(f"\n  [{key}] {name}")
-    print("  " + "-" * (len(name) + 4))
-    for num, label, _ in items:
-        print(f"    {num}. {label}")
-    print(f"\n    b. Back    q. Quit")
+def print_layer_menu(key: str, name: str, items: list,
+                     context: str | None = None):
+    label = f"[{key}] {name}"
+    if context:
+        label += f"  (issue: {context})"
+    print(f"\n  {label}")
+    print("  " + "-" * len(label))
+    for num, desc, _ in items:
+        print(f"    {num:>2}. {desc}")
+    print(f"\n     b. Back    q. Quit")
 
 
-def run_layer(key: str, name: str, items: list):
+def run_layer(key: str, name: str, items: list,
+              context: str | None = None):
     while True:
-        print_layer_menu(key, name, items)
+        print_layer_menu(key, name, items, context=context)
         choice = input(f"\n  {key}> ").strip().lower()
         if choice in ("b", "back"):
             return
         if choice in ("q", "quit", "exit"):
             raise SystemExit(0)
         handler = None
-        for num, label, fn in items:
+        for num, desc, fn in items:
             if choice == num:
-                handler = (label, fn)
+                handler = (desc, fn)
                 break
         if handler is None:
             print(f"  Unknown option '{choice}'.")
             continue
-        label, fn = handler
-        print(f"\n  -- {label} --")
+        desc, fn = handler
+        print(f"\n  -- {desc} --")
         try:
             fn()
         except KeyboardInterrupt:
@@ -471,30 +409,43 @@ def run_layer(key: str, name: str, items: list):
             print(f"\n  ERROR: {e}")
 
 
+def enter_analysis():
+    global _active_issue_date
+    default = _get_latest_week_ended()
+    _active_issue_date = _prompt("Issue date", default)
+    print(f"  Using issue: {_active_issue_date}")
+    run_layer("B", "Newsletter Analysis", LAYER_B_ITEMS,
+              context=_active_issue_date)
+    _active_issue_date = None
+
+
 def main():
     print_top_menu()
     while True:
-        choice = input("\nSelect layer> ").strip().upper()
+        choice = input("\nSelect> ").strip().upper()
         if choice in ("Q", "QUIT", "EXIT"):
             print("Bye.")
             break
         if choice == "?":
             print_top_menu()
             continue
-        layer = None
-        for key, name, items in LAYERS:
-            if choice == key:
-                layer = (key, name, items)
+        if choice == "A":
+            try:
+                run_layer("A", "Newsletter Management & Reference",
+                          LAYER_A_ITEMS)
+            except SystemExit:
+                print("Bye.")
                 break
-        if layer is None:
-            print(f"  Unknown layer '{choice}'. Type ? for menu.")
-            continue
-        try:
-            run_layer(*layer)
-        except SystemExit:
-            print("Bye.")
-            break
-        print_top_menu()
+            print_top_menu()
+        elif choice == "B":
+            try:
+                enter_analysis()
+            except SystemExit:
+                print("Bye.")
+                break
+            print_top_menu()
+        else:
+            print(f"  Unknown option '{choice}'. Type ? for menu.")
 
 
 if __name__ == "__main__":
