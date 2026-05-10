@@ -143,24 +143,25 @@ def _build_report_md(func_name: str, result: Any) -> str:
     return "\n".join(sections)
 
 
-def _save_report(func_name: str, result: Any,
-                 issue_date: str | None = None) -> Path:
-    if issue_date:
-        report_dir = REPORTS_ROOT / issue_date
-        filename = f"{issue_date}-{func_name}.md"
-    else:
-        report_dir = REPORTS_ROOT
-        filename = f"{func_name}.md"
+def _save_management_report(func_name: str, result: Any) -> Path:
+    report_dir = REPORTS_ROOT / "management"
     report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / filename
+    path = report_dir / f"{func_name}.md"
     path.write_text(_build_report_md(func_name, result), encoding="utf-8")
     return path
 
 
-def _run_and_report(func_name: str, result: Any,
-                    issue_date: str | None = None) -> None:
+def _save_issue_report(week_ended: str, filename: str, content: str) -> Path:
+    report_dir = REPORTS_ROOT / week_ended
+    report_dir.mkdir(parents=True, exist_ok=True)
+    path = report_dir / filename
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _run_and_report_mgmt(func_name: str, result: Any) -> None:
     print(_format_json(result))
-    path = _save_report(func_name, result, issue_date=issue_date)
+    path = _save_management_report(func_name, result)
     print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
@@ -192,65 +193,65 @@ def _prompt_week(msg: str = "Week ended date") -> str:
 
 def do_list_issues():
     limit = int(_prompt("How many issues", "10"))
-    _run_and_report("list_issues", _get_server().list_issues(limit=limit))
+    _run_and_report_mgmt("list_issues", _get_server().list_issues(limit=limit))
 
 
 def do_verify_newsletter():
     week = _prompt_optional("Week ended date (YYYY-MM-DD)")
-    _run_and_report("verify_newsletter_ingested",
-                    _get_server().verify_newsletter_ingested(week_ended=week))
+    _run_and_report_mgmt("verify_newsletter_ingested",
+                         _get_server().verify_newsletter_ingested(week_ended=week))
 
 
 def do_ingest_newsletter():
     path = _prompt_optional("PDF path (Enter for latest in data/)")
-    _run_and_report("ingest_newsletter",
-                    _get_server().ingest_newsletter(pdf_path=path))
+    _run_and_report_mgmt("ingest_newsletter",
+                         _get_server().ingest_newsletter(pdf_path=path))
 
 
 def do_ingest_pending():
-    _run_and_report("ingest_pending_newsletters",
-                    _get_server().ingest_pending_newsletters())
+    _run_and_report_mgmt("ingest_pending_newsletters",
+                         _get_server().ingest_pending_newsletters())
 
 
 def do_backfill_intelligence():
-    _run_and_report("backfill_phase1_intelligence",
-                    _get_server().backfill_phase1_intelligence())
+    _run_and_report_mgmt("backfill_phase1_intelligence",
+                         _get_server().backfill_phase1_intelligence())
 
 
 def do_import_schwab_catalog():
     path = _prompt_optional("CSV path (Enter for default)")
-    _run_and_report("import_schwab_futures_catalog",
-                    _get_server().import_schwab_futures_catalog(csv_path=path))
+    _run_and_report_mgmt("import_schwab_futures_catalog",
+                         _get_server().import_schwab_futures_catalog(csv_path=path))
 
 
 def do_view_schwab_catalog():
     limit = int(_prompt("Limit", "25"))
     cat = _prompt_optional("Category filter")
-    _run_and_report("list_schwab_futures_catalog",
-                    _get_server().list_schwab_futures_catalog(limit=limit,
-                                                             category=cat))
+    _run_and_report_mgmt("list_schwab_futures_catalog",
+                         _get_server().list_schwab_futures_catalog(limit=limit,
+                                                                  category=cat))
 
 
 def do_view_commodity_catalog():
-    _run_and_report("list_newsletter_commodity_catalog",
-                    _get_server().list_newsletter_commodity_catalog())
+    _run_and_report_mgmt("list_newsletter_commodity_catalog",
+                         _get_server().list_newsletter_commodity_catalog())
 
 
 def do_view_contract_codes():
-    _run_and_report("list_contract_month_codes",
-                    _get_server().list_contract_month_codes())
+    _run_and_report_mgmt("list_contract_month_codes",
+                         _get_server().list_contract_month_codes())
 
 
 def do_import_strategy_manual():
     path = _prompt_optional("PDF path (Enter for default)")
-    _run_and_report("import_strategy_manual",
-                    _get_server().import_strategy_manual(pdf_path=path))
+    _run_and_report_mgmt("import_strategy_manual",
+                         _get_server().import_strategy_manual(pdf_path=path))
 
 
 def do_view_strategy_principles():
     cat = _prompt_optional("Category filter")
-    _run_and_report("list_strategy_principles",
-                    _get_server().list_strategy_principles(category=cat))
+    _run_and_report_mgmt("list_strategy_principles",
+                         _get_server().list_strategy_principles(category=cat))
 
 
 LAYER_A_ITEMS = [
@@ -272,36 +273,245 @@ LAYER_A_ITEMS = [
 # B - Sunday Pipeline
 # ===================================================================
 
+def _build_sunday_pipeline_md(week: str, steps: dict[str, Any]) -> str:
+    """Build consolidated sunday_pipeline.md from all pipeline step results."""
+    now = datetime.now()
+    lines = [
+        f"# Sunday Pipeline: {week}",
+        "",
+        f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+    ]
+
+    # Step 1: Ingest
+    ingest = steps.get("ingest", {})
+    lines.append("## 1. Ingest")
+    lines.append("")
+    lines.append(f"- **ingested_count:** {ingest.get('ingested_count', 0)}")
+    lines.append(f"- **skipped_count:** {ingest.get('skipped_count', 0)}")
+    newly = [r for r in ingest.get("results", []) if r.get("status") == "ingested"]
+    if newly:
+        lines.append(f"\nNewly ingested:")
+        for r in newly:
+            lines.append(f"- {r.get('week_ended')} -- {r.get('source_file', '')}")
+    lines.append("")
+
+    # Step 2: Verify
+    verify = steps.get("verify", {})
+    lines.append("## 2. Verify")
+    lines.append("")
+    lines.append(f"- **week_ended:** {verify.get('latest_ingested_week_ended', verify.get('week_ended', ''))}")
+    lines.append(f"- **entry_count:** {verify.get('entry_count', 0)}")
+    sc = verify.get("section_counts", {})
+    lines.append(f"- **intra_commodity:** {sc.get('intra_commodity', 0)}")
+    lines.append(f"- **inter_commodity:** {sc.get('inter_commodity', 0)}")
+    lines.append(f"- **has_watchlist_reference:** {verify.get('has_watchlist_reference', False)}")
+    lines.append(f"- **watchlist_fingerprint:** {verify.get('watchlist_fingerprint', '')}")
+    lines.append("")
+
+    # Step 3: Publish
+    publish = steps.get("publish", {})
+    lines.append("## 3. Publish")
+    lines.append("")
+    pub_refreshed = publish.get("refreshed", publish)
+    pub_published = publish.get("published", publish)
+    lines.append(f"- **publication_version:** {pub_published.get('publication_version', publish.get('publication_version', '?'))}")
+    lines.append(f"- **publication_run_id:** {pub_published.get('publication_run_id', publish.get('publication_run_id', '?'))}")
+    delta = pub_refreshed.get("delta_summary", publish.get("delta_summary", ""))
+    if delta:
+        lines.append(f"- **delta_summary:** {delta}")
+    lines.append("")
+
+    # Step 4: Validated Report
+    validated = steps.get("validated", {})
+    lines.append("## 4. Validated Watchlist")
+    lines.append("")
+    lines.append(f"- **is_valid:** {validated.get('is_valid', '?')}")
+    lines.append(f"- **message:** {validated.get('message', '')}")
+    report_md = validated.get("report_markdown", "")
+    if report_md:
+        lines.append("")
+        lines.append(report_md)
+    lines.append("")
+
+    # Step 5: CSV Export (if present)
+    csv_info = steps.get("csv_export")
+    if csv_info:
+        lines.append("## 5. CSV Export")
+        lines.append("")
+        lines.append(f"- **entry_count:** {csv_info.get('entry_count', 0)}")
+        written = csv_info.get("written_files", {})
+        if written:
+            for label, fpath in written.items():
+                lines.append(f"- **{label}:** `{fpath}`")
+        lines.append("")
+
+    # Source provenance
+    entries = validated.get("entries", [])
+    if entries:
+        prov_cols = ["section_name", "commodity_name", "spread_expression",
+                     "source_page_number", "source_row_hash"]
+        lines.append("## Source Provenance")
+        lines.append("")
+        lines.append(_md_table(entries, prov_cols))
+
+    lines.append("\n---\n")
+    return "\n".join(lines)
+
+
+def _build_issue_analysis_md(week: str, parts: dict[str, Any]) -> str:
+    """Build consolidated issue_analysis.md from summary + brief + watchlist + principles."""
+    now = datetime.now()
+    lines = [
+        f"# Issue Analysis: {week}",
+        "",
+        f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+    ]
+
+    # Issue Brief
+    brief = parts.get("brief", {})
+    if brief:
+        lines.append("## Issue Brief")
+        lines.append("")
+        if brief.get("headline"):
+            lines.append(f"**{brief['headline']}**")
+            lines.append("")
+        if brief.get("executive_summary"):
+            lines.append(brief["executive_summary"])
+            lines.append("")
+        for field, label in [("key_themes", "Key Themes"),
+                             ("notable_risks", "Notable Risks"),
+                             ("notable_opportunities", "Notable Opportunities")]:
+            items = brief.get(field, [])
+            if items:
+                lines.append(f"### {label}")
+                lines.append("")
+                for item in items:
+                    lines.append(f"- {item}")
+                lines.append("")
+
+        ws = brief.get("watchlist_summary", {})
+        if ws:
+            lines.append("### Watchlist Summary")
+            lines.append("")
+            for k, v in ws.items():
+                lines.append(f"- **{k}:** {v}")
+            lines.append("")
+
+        change = brief.get("change_summary", {})
+        if change:
+            lines.append("### Change Summary (vs prior issue)")
+            lines.append("")
+            for k, v in change.items():
+                lines.append(f"- **{k}:** {v}")
+            lines.append("")
+
+    # Watchlist compact
+    entries = parts.get("entries", [])
+    if entries:
+        intra = [e for e in entries if e.get("section_name") == "intra_commodity"]
+        inter = [e for e in entries if e.get("section_name") == "inter_commodity"]
+        cols = ["commodity_name", "spread_expression", "side", "enter_date",
+                "exit_date", "trade_quality", "volatility_structure", "tradeable"]
+
+        if intra:
+            lines.append(f"## Intra-Commodity Watchlist ({len(intra)} rows)")
+            lines.append("")
+            lines.append(_md_table(intra, cols))
+
+        if inter:
+            lines.append(f"## Inter-Commodity Watchlist ({len(inter)} rows)")
+            lines.append("")
+            lines.append(_md_table(inter, cols))
+
+        # Tradeable summary
+        tradeable = [e for e in entries if e.get("tradeable")]
+        blocked = [e for e in entries if not e.get("tradeable") and e.get("blocked_reason")]
+        lines.append("## Tradeable vs Blocked Summary")
+        lines.append("")
+        lines.append(f"- **Total entries:** {len(entries)}")
+        lines.append(f"- **Tradeable:** {len(tradeable)}")
+        lines.append(f"- **Blocked:** {len(blocked)}")
+        if entries:
+            lines.append(f"- **Selectivity:** {len(tradeable) / len(entries) * 100:.0f}%")
+        lines.append("")
+
+        if tradeable:
+            lines.append("### Tradeable")
+            lines.append("")
+            for e in tradeable:
+                lines.append(f"- {e.get('commodity_name')} {e.get('spread_expression')} "
+                             f"({e.get('trade_quality', '')})")
+            lines.append("")
+
+        if blocked:
+            lines.append("### Blocked")
+            lines.append("")
+            for e in blocked:
+                reason = (e.get("blocked_reason") or "")[:80]
+                lines.append(f"- {e.get('commodity_name')} {e.get('spread_expression')}: {reason}")
+            lines.append("")
+
+    # Principle analysis
+    if entries and any(e.get("principle_scores") for e in entries):
+        lines.append("## Principle Analysis")
+        lines.append("")
+        for e in entries:
+            scores = e.get("principle_scores", {})
+            statuses = e.get("principle_status", {})
+            if not scores:
+                continue
+            tradeable_flag = "TRADEABLE" if e.get("tradeable") else "BLOCKED"
+            lines.append(f"### {e.get('commodity_name')} {e.get('spread_code', '')} [{tradeable_flag}]")
+            lines.append("")
+            summary = e.get("decision_summary", "")
+            if summary:
+                lines.append(f"_{summary}_")
+                lines.append("")
+            for principle, score in scores.items():
+                status = statuses.get(principle, "?")
+                marker = "X" if status == "fail" else ("~" if status == "deferred" else "v")
+                score_str = f"{score:.2f}" if score is not None else "n/a"
+                lines.append(f"- [{marker}] **{principle}:** {score_str} ({status})")
+            lines.append("")
+
+    lines.append("\n---\n")
+    return "\n".join(lines)
+
+
 def do_sunday_full_pipeline():
-    """Ingest pending -> verify -> refresh & publish -> validated report."""
+    """Ingest -> verify -> publish -> validated report -> CSV export."""
     srv = _get_server()
     global _latest_week_ended
     _latest_week_ended = None
+    steps: dict[str, Any] = {}
 
-    print("\n  Step 1/4: Ingesting pending newsletters...")
+    print("\n  Step 1/5: Ingesting pending newsletters...")
     ingest_result = srv.ingest_pending_newsletters()
+    steps["ingest"] = ingest_result
     ingested = ingest_result.get("ingested_count", 0)
     skipped = ingest_result.get("skipped_count", 0)
     print(f"  -> Ingested: {ingested}, Skipped: {skipped}")
-    _save_report("sunday_1_ingest", ingest_result)
 
-    print("\n  Step 2/4: Verifying latest newsletter...")
+    print("\n  Step 2/5: Verifying latest newsletter...")
     verify_result = srv.verify_newsletter_ingested(week_ended=None)
+    steps["verify"] = verify_result
     week = verify_result.get("latest_ingested_week_ended")
     if not week:
         print("  ERROR: No newsletter found in database.")
         return
     entry_count = verify_result.get("entry_count", 0)
     print(f"  -> Latest issue: {week}, entries: {entry_count}")
-    _save_report("sunday_2_verify", verify_result)
 
-    print(f"\n  Step 3/4: Refresh & publish issue {week}...")
+    print(f"\n  Step 3/5: Refresh & publish issue {week}...")
     publish_result = srv.refresh_and_publish_issue(week_ended=week)
-    pub_version = publish_result.get("publication_version", "?")
+    steps["publish"] = publish_result
+    pub_data = publish_result.get("published", publish_result)
+    pub_version = pub_data.get("publication_version", "?")
     print(f"  -> Published: {pub_version}")
-    _save_report("sunday_3_publish", publish_result, issue_date=week)
 
-    print(f"\n  Step 4/4: Validated watchlist report for {week}...")
+    print(f"\n  Step 4/5: Validated watchlist report for {week}...")
     section_counts = verify_result.get("section_counts", {})
     validated = srv.get_validated_watchlist_report(
         week_ended=week,
@@ -310,14 +520,29 @@ def do_sunday_full_pipeline():
         expected_inter_commodity_count=section_counts.get("inter_commodity"),
         expected_watchlist_fingerprint=verify_result.get("watchlist_fingerprint"),
     )
+    steps["validated"] = validated
     is_valid = validated.get("is_valid", False)
-    tradeable = validated.get("tradeable_count", "?")
-    blocked = validated.get("blocked_count", "?")
-    print(f"  -> Valid: {is_valid}, Tradeable: {tradeable}, Blocked: {blocked}")
-    _save_report("sunday_4_validated_report", validated, issue_date=week)
+    print(f"  -> Valid: {is_valid}")
+
+    print(f"\n  Step 5/5: Exporting watchlist CSV for {week}...")
+    csv_dir = REPORTS_ROOT / week
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = str(csv_dir / f"{week}-watchlist.csv")
+    csv_result = srv.export_watchlist_csv(
+        week_ended=week,
+        output_path=csv_path,
+    )
+    steps["csv_export"] = csv_result
+    print(f"  -> CSV exported: {csv_result.get('entry_count', 0)} entries")
+
+    # Save consolidated report
+    content = _build_sunday_pipeline_md(week, steps)
+    path = _save_issue_report(week, "sunday_pipeline.md", content)
 
     print(f"\n  Sunday pipeline complete for {week}.")
-    print(f"  Reports saved to: reports/{week}/")
+    print(f"  Reports saved to: {path.parent.relative_to(PROJECT_ROOT)}/")
+    print(f"    - sunday_pipeline.md")
+    print(f"    - {week}-watchlist.csv")
     if not is_valid:
         print("  WARNING: Validated report has mismatches! Check the report.")
 
@@ -343,7 +568,9 @@ def do_sunday_ingest_and_verify():
     print(f"  -> Entries: {entry_count}")
     print(f"  -> Sections: {_format_json(sections)}")
     print(f"  -> Watchlist reference: {has_ref}")
-    _save_report("sunday_ingest_verify", {
+
+    # Save to management since this is a partial run
+    _save_management_report("sunday_ingest_verify", {
         "ingest": ingest_result, "verify": verify_result
     })
 
@@ -354,7 +581,8 @@ def do_sunday_publish():
     srv = _get_server()
     print(f"\n  Refreshing & publishing {week}...")
     result = srv.refresh_and_publish_issue(week_ended=week)
-    _run_and_report("refresh_and_publish_issue", result, issue_date=week)
+    print(_format_json(result))
+    _save_management_report("refresh_and_publish", result)
 
 
 def do_sunday_validated_report():
@@ -378,303 +606,91 @@ def do_sunday_validated_report():
         expected_inter_commodity_count=sections.get("inter_commodity"),
         expected_watchlist_fingerprint=verify.get("watchlist_fingerprint"),
     )
-    _run_and_report("validated_watchlist_report", result, issue_date=week)
+    print(_format_json(result))
+
+    content = _build_sunday_pipeline_md(week, {"verify": verify, "validated": result})
+    path = _save_issue_report(week, "sunday_pipeline.md", content)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
-def do_sunday_e2e_metrics():
-    """Sunday E2E metrics: ingest -> summary -> watchlist -> publish -> validate."""
+def do_sunday_issue_analysis():
+    """Build consolidated issue analysis: brief + watchlist + principles."""
     srv = _get_server()
-    global _latest_week_ended
-    _latest_week_ended = None
+    week = _prompt_week()
 
-    print("\n  Step 1: Ingesting pending newsletters...")
-    ingest = srv.ingest_pending_newsletters()
-    print(f"  -> Ingested: {ingest.get('ingested_count', 0)}")
+    print(f"\n  Building issue analysis for {week}...")
 
-    print("\n  Step 2: Verifying...")
-    verify = srv.verify_newsletter_ingested(week_ended=None)
-    week = verify.get("latest_ingested_week_ended")
-    if not week:
-        print("  ERROR: No newsletter found.")
-        return
-    print(f"  -> Issue: {week}")
-
-    print(f"\n  Step 3: Issue summary for {week}...")
+    print("  -> Loading issue summary...")
     summary = srv.get_issue_summary(week_ended=week)
-    _save_report("sunday_e2e_summary", summary, issue_date=week)
+    brief = summary.get("issue_brief", {})
 
-    print(f"\n  Step 4: Watchlist for {week}...")
+    print("  -> Loading watchlist...")
     watchlist = srv.get_watchlist(week_ended=week)
     entries = watchlist.get("entries", [])
     tradeable = [e for e in entries if e.get("tradeable")]
     blocked = [e for e in entries if not e.get("tradeable") and e.get("blocked_reason")]
-    deferred = [e for e in entries
-                if e.get("tradeable") and e.get("principle_status", {})
-                and any(v == "deferred" for v in e.get("principle_status", {}).values())]
-    print(f"  -> Total: {len(entries)}, Tradeable: {len(tradeable)}, "
-          f"Blocked: {len(blocked)}, Deferred: {len(deferred)}")
-    _save_report("sunday_e2e_watchlist", watchlist, issue_date=week)
 
-    print(f"\n  Step 5: Refresh & publish {week}...")
-    publish = srv.refresh_and_publish_issue(week_ended=week)
-    print(f"  -> Published: {publish.get('publication_version', '?')}")
-    _save_report("sunday_e2e_publish", publish, issue_date=week)
+    print(f"  -> Entries: {len(entries)}, Tradeable: {len(tradeable)}, Blocked: {len(blocked)}")
 
-    print(f"\n  Step 6: Validated report for {week}...")
-    section_counts = verify.get("section_counts", {})
-    validated = srv.get_validated_watchlist_report(
-        week_ended=week,
-        expected_entry_count=verify.get("entry_count"),
-        expected_intra_commodity_count=section_counts.get("intra_commodity"),
-        expected_inter_commodity_count=section_counts.get("inter_commodity"),
-        expected_watchlist_fingerprint=verify.get("watchlist_fingerprint"),
-    )
-    _save_report("sunday_e2e_validated", validated, issue_date=week)
-
-    selectivity = (len(tradeable) / len(entries) * 100) if entries else 0
-    top_blocks = {}
-    for e in blocked:
-        reason = (e.get("blocked_reason") or "unknown").split(".")[0].strip()
-        top_blocks[reason] = top_blocks.get(reason, 0) + 1
-
-    print(f"\n  === Sunday E2E Metrics for {week} ===")
-    print(f"  Total entries:       {len(entries)}")
-    print(f"  Tradeable:           {len(tradeable)}")
-    print(f"  Blocked:             {len(blocked)}")
-    print(f"  Deferred for daily:  {len(deferred)}")
-    print(f"  Selectivity:         {selectivity:.0f}%")
-    print(f"  Valid:               {validated.get('is_valid', '?')}")
-    if top_blocks:
-        print(f"  Top blocking reasons:")
-        for reason, count in sorted(top_blocks.items(), key=lambda x: -x[1]):
-            print(f"    - {reason}: {count}")
-    print(f"\n  Reports saved to: reports/{week}/")
-
-
-LAYER_B_ITEMS = [
-    ("1", "Full Sunday pipeline (ingest->publish->validate)", do_sunday_full_pipeline),
-    ("2", "Ingest & verify only", do_sunday_ingest_and_verify),
-    ("3", "Publish issue", do_sunday_publish),
-    ("4", "Validated watchlist report (with verify chain)", do_sunday_validated_report),
-    ("5", "Sunday E2E metrics check", do_sunday_e2e_metrics),
-]
-
-
-# ===================================================================
-# C - Newsletter Analysis (issue date set once at entry)
-# ===================================================================
-
-_active_issue_date: str | None = None
-
-
-def _issue_date() -> str:
-    assert _active_issue_date is not None
-    return _active_issue_date
-
-
-def do_issue_summary():
-    _run_and_report("get_issue_summary",
-                    _get_server().get_issue_summary(week_ended=_issue_date()),
-                    issue_date=_issue_date())
-
-
-def do_issue_brief():
-    """Extract and display the issue brief in readable form."""
-    result = _get_server().get_issue_summary(week_ended=_issue_date())
-    brief = result.get("issue_brief", {})
-    if not brief:
-        print("  No issue brief found for this issue.")
-        return
-
-    print(f"\n  === Issue Brief: {_issue_date()} ===")
-    print(f"\n  Headline: {brief.get('headline', 'N/A')}")
-
-    exec_summary = brief.get("executive_summary", "")
-    if exec_summary:
-        print(f"\n  Executive Summary:\n  {exec_summary[:500]}")
-
-    themes = brief.get("key_themes", [])
-    if themes:
-        print(f"\n  Key Themes:")
-        for t in themes:
-            print(f"    - {t}")
-
-    risks = brief.get("notable_risks", [])
-    if risks:
-        print(f"\n  Notable Risks:")
-        for r in risks:
-            print(f"    - {r}")
-
-    opps = brief.get("notable_opportunities", [])
-    if opps:
-        print(f"\n  Notable Opportunities:")
-        for o in opps:
-            print(f"    - {o}")
-
-    ws = brief.get("watchlist_summary", {})
-    if ws:
-        print(f"\n  Watchlist Summary:")
-        for k, v in ws.items():
-            print(f"    - {k}: {v}")
-
-    change = brief.get("change_summary", {})
-    if change:
-        print(f"\n  Change Summary (vs prior issue):")
-        for k, v in change.items():
-            print(f"    - {k}: {v}")
-
-    _save_report("issue_brief", brief, issue_date=_issue_date())
-    print(f"\n  [saved: reports/{_issue_date()}/{_issue_date()}-issue_brief.md]")
-
-
-def do_watchlist():
-    quality = _prompt_optional("Min trade quality (e.g. 'Tier 2')")
-    _run_and_report("get_watchlist",
-                    _get_server().get_watchlist(week_ended=_issue_date(),
-                                               min_trade_quality=quality),
-                    issue_date=_issue_date())
-
-
-def do_watchlist_compact():
-    """Compact watchlist: key fields only, split by section."""
-    result = _get_server().get_watchlist(week_ended=_issue_date())
-    entries = result.get("entries", [])
-
+    # Display compact watchlist on screen
     intra = [e for e in entries if e.get("section_name") == "intra_commodity"]
     inter = [e for e in entries if e.get("section_name") == "inter_commodity"]
-    cols = ["commodity_name", "spread_expression", "side", "enter_date",
-            "exit_date", "trade_quality", "volatility_structure", "tradeable"]
-
-    report_lines = [f"# Compact Watchlist: {_issue_date()}\n"]
 
     if intra:
         print(f"\n  Intra-Commodity ({len(intra)} rows):")
-        report_lines.append(f"\n## Intra-Commodity ({len(intra)} rows)\n")
         for e in intra:
-            line = (f"  {e.get('commodity_name', ''):20s} "
-                    f"{e.get('spread_expression', ''):30s} "
-                    f"{e.get('side', ''):5s} "
-                    f"{e.get('enter_date', ''):12s} "
-                    f"{e.get('exit_date', ''):12s} "
-                    f"{e.get('trade_quality', ''):8s} "
-                    f"{e.get('volatility_structure', ''):5s} "
-                    f"{'Y' if e.get('tradeable') else 'N'}")
-            print(line)
-        report_lines.append(_md_table(intra, cols))
+            t = "Y" if e.get("tradeable") else "N"
+            print(f"  {e.get('commodity_name', ''):20s} "
+                  f"{e.get('spread_expression', ''):30s} "
+                  f"{e.get('side', ''):5s} "
+                  f"{e.get('trade_quality', ''):8s} {t}")
 
     if inter:
         print(f"\n  Inter-Commodity ({len(inter)} rows):")
-        report_lines.append(f"\n## Inter-Commodity ({len(inter)} rows)\n")
         for e in inter:
-            line = (f"  {e.get('commodity_name', ''):20s} "
-                    f"{e.get('spread_expression', ''):30s} "
-                    f"{e.get('side', ''):5s} "
-                    f"{e.get('enter_date', ''):12s} "
-                    f"{e.get('exit_date', ''):12s} "
-                    f"{e.get('trade_quality', ''):8s} "
-                    f"{e.get('volatility_structure', ''):5s} "
-                    f"{'Y' if e.get('tradeable') else 'N'}")
-            print(line)
-        report_lines.append(_md_table(inter, cols))
+            t = "Y" if e.get("tradeable") else "N"
+            print(f"  {e.get('commodity_name', ''):20s} "
+                  f"{e.get('spread_expression', ''):30s} "
+                  f"{e.get('side', ''):5s} "
+                  f"{e.get('trade_quality', ''):8s} {t}")
 
-    report_dir = REPORTS_ROOT / _issue_date()
-    report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / f"{_issue_date()}-watchlist_compact.md"
-    path.write_text("\n".join(report_lines), encoding="utf-8")
-    print(f"\n  [saved: {path.relative_to(PROJECT_ROOT)}]")
+    content = _build_issue_analysis_md(week, {
+        "brief": brief,
+        "entries": entries,
+    })
+    path = _save_issue_report(week, "issue_analysis.md", content)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
-def do_watchlist_reference():
-    _run_and_report("get_watchlist_reference",
-                    _get_server().get_watchlist_reference(
-                        week_ended=_issue_date()),
-                    issue_date=_issue_date())
+def do_sunday_export_csv():
+    """Export watchlist CSV for an issue."""
+    week = _prompt_week()
+    section = _prompt_optional("Section filter (intra_commodity / inter_commodity)")
+    csv_dir = REPORTS_ROOT / week
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    suffix = f"-{section}" if section else ""
+    csv_path = str(csv_dir / f"{week}-watchlist{suffix}.csv")
+    result = _get_server().export_watchlist_csv(
+        week_ended=week,
+        section_name=section,
+        output_path=csv_path,
+    )
+    print(f"  Exported {result.get('entry_count', 0)} entries to:")
+    print(f"  {csv_path}")
 
 
-def do_principle_analysis():
-    """Show principle scoring breakdown for all entries."""
-    result = _get_server().get_watchlist(week_ended=_issue_date())
-    entries = result.get("entries", [])
-
-    print(f"\n  Principle Analysis for {_issue_date()} ({len(entries)} entries)")
-    print(f"  {'Commodity':20s} {'Spread':25s} {'Tradeable':10s} {'Decision':50s}")
-    print("  " + "-" * 105)
-
-    for e in entries:
-        tradeable = "YES" if e.get("tradeable") else "NO"
-        summary = (e.get("decision_summary") or "")[:50]
-        print(f"  {e.get('commodity_name', ''):20s} "
-              f"{e.get('spread_code', ''):25s} "
-              f"{tradeable:10s} "
-              f"{summary}")
-
-        scores = e.get("principle_scores", {})
-        statuses = e.get("principle_status", {})
-        if scores:
-            for principle, score in scores.items():
-                status = statuses.get(principle, "?")
-                marker = "X" if status == "fail" else ("~" if status == "deferred" else " ")
-                print(f"    [{marker}] {principle}: {score:.2f} ({status})")
-
-    _save_report("principle_analysis", {
-        "week_ended": _issue_date(),
-        "entry_count": len(entries),
-        "entries": [{
-            "commodity_name": e.get("commodity_name"),
-            "spread_code": e.get("spread_code"),
-            "tradeable": e.get("tradeable"),
-            "decision_summary": e.get("decision_summary"),
-            "principle_scores": e.get("principle_scores"),
-            "principle_status": e.get("principle_status"),
-            "blocked_reason": e.get("blocked_reason"),
-        } for e in entries]
-    }, issue_date=_issue_date())
-
-
-def do_export_csv():
-    section = _prompt_optional("Section name filter (intra_commodity / inter_commodity)")
-    quality = _prompt_optional("Min trade quality")
-    out_path = _prompt_optional("Output CSV path")
-    _run_and_report("export_watchlist_csv",
-                    _get_server().export_watchlist_csv(
-                        week_ended=_issue_date(), section_name=section,
-                        min_trade_quality=quality, output_path=out_path),
-                    issue_date=_issue_date())
-
-
-def do_export_bundle():
-    date_from = _prompt("Date from (YYYY-MM-DD)")
-    date_to = _prompt("Date to", _issue_date())
-    out = _prompt_optional("Output directory")
-    _run_and_report("export_watchlist_bundle",
-                    _get_server().export_watchlist_bundle(
-                        date_from=date_from, date_to=date_to, output_dir=out),
-                    issue_date=_issue_date())
-
-
-def do_publish():
-    out = _prompt_optional("Output directory")
-    _run_and_report("publish_issue",
-                    _get_server().publish_issue(
-                        week_ended=_issue_date(), output_dir=out),
-                    issue_date=_issue_date())
-
-
-LAYER_C_ITEMS = [
-    ("1", "Issue summary (full JSON)", do_issue_summary),
-    ("2", "Issue brief (readable)", do_issue_brief),
-    ("3", "Watchlist (full)", do_watchlist),
-    ("4", "Watchlist (compact, by section)", do_watchlist_compact),
-    ("5", "Watchlist reference rules", do_watchlist_reference),
-    ("6", "Principle analysis (scoring breakdown)", do_principle_analysis),
-    ("7", "Export watchlist CSV", do_export_csv),
-    ("8", "Export watchlist bundle (date range)", do_export_bundle),
-    ("9", "Publish issue", do_publish),
+LAYER_B_ITEMS = [
+    ("1", "Full Sunday pipeline (ingest->publish->validate->CSV)", do_sunday_full_pipeline),
+    ("2", "Ingest & verify only", do_sunday_ingest_and_verify),
+    ("3", "Publish issue", do_sunday_publish),
+    ("4", "Validated watchlist report", do_sunday_validated_report),
+    ("5", "Issue analysis (brief + watchlist + principles)", do_sunday_issue_analysis),
+    ("6", "Export watchlist CSV", do_sunday_export_csv),
 ]
 
 
 # ===================================================================
-# D - Daily Bridge (smartspreads-mcp side only)
+# C - Daily Bridge (smartspreads-mcp side only)
 # ===================================================================
 
 _daily_issue_date: str | None = None
@@ -695,10 +711,9 @@ def do_daily_exit_schedule():
         return
     positions = json.loads(raw)
     as_of = _prompt("As-of date", date.today().isoformat())
-    _run_and_report("resolve_open_position_exit_schedule",
-                    _get_server().resolve_open_position_exit_schedule(
-                        positions=positions, as_of=as_of),
-                    issue_date=_daily_date())
+    result = _get_server().resolve_open_position_exit_schedule(
+        positions=positions, as_of=as_of)
+    print(_format_json(result))
 
 
 def do_daily_exit_from_schwab():
@@ -710,67 +725,9 @@ def do_daily_exit_from_schwab():
         return
     positions_data = json.loads(p.read_text(encoding="utf-8"))
     as_of = _prompt("As-of date", date.today().isoformat())
-    _run_and_report("get_daily_exit_schedule",
-                    _get_server().get_daily_exit_schedule(
-                        schwab_futures_positions=positions_data, as_of=as_of),
-                    issue_date=_daily_date())
-
-
-def do_daily_issue_context():
-    """Get weekly intelligence context for daily trading decisions."""
-    result = _get_server().get_issue_summary(week_ended=_daily_date())
-    brief = result.get("issue_brief", {})
-
-    print(f"\n  === Daily Intelligence Context: {_daily_date()} ===")
-
-    themes = brief.get("key_themes", [])
-    if themes:
-        print(f"\n  Key Themes:")
-        for t in themes[:5]:
-            print(f"    - {t}")
-
-    risks = brief.get("notable_risks", [])
-    if risks:
-        print(f"\n  Risks to Watch:")
-        for r in risks[:5]:
-            print(f"    - {r}")
-
-    opps = brief.get("notable_opportunities", [])
-    if opps:
-        print(f"\n  Opportunities:")
-        for o in opps[:5]:
-            print(f"    - {o}")
-
-    blocked = []
-    watchlist = _get_server().get_watchlist(week_ended=_daily_date())
-    for e in watchlist.get("entries", []):
-        if not e.get("tradeable") and e.get("blocked_reason"):
-            blocked.append(e)
-    if blocked:
-        print(f"\n  Blocked Trades ({len(blocked)}):")
-        for e in blocked:
-            print(f"    - {e.get('commodity_name')} {e.get('spread_code')}: "
-                  f"{e.get('blocked_reason', '')[:60]}")
-
-    _save_report("daily_intelligence_context", {
-        "week_ended": _daily_date(),
-        "themes": themes,
-        "risks": risks,
-        "opportunities": opps,
-        "blocked_trades": [{
-            "commodity_name": e.get("commodity_name"),
-            "spread_code": e.get("spread_code"),
-            "blocked_reason": e.get("blocked_reason"),
-        } for e in blocked],
-    }, issue_date=_daily_date())
-
-
-def do_daily_watchlist_reference():
-    """Show watchlist reference rules for daily interpretation."""
-    _run_and_report("get_watchlist_reference",
-                    _get_server().get_watchlist_reference(
-                        week_ended=_daily_date()),
-                    issue_date=_daily_date())
+    result = _get_server().get_daily_exit_schedule(
+        schwab_futures_positions=positions_data, as_of=as_of)
+    print(_format_json(result))
 
 
 def do_daily_tradeable_ideas():
@@ -778,9 +735,6 @@ def do_daily_tradeable_ideas():
     result = _get_server().get_watchlist(week_ended=_daily_date())
     entries = result.get("entries", [])
     tradeable = [e for e in entries if e.get("tradeable")]
-
-    cols = ["commodity_name", "spread_expression", "side", "enter_date",
-            "exit_date", "trade_quality", "volatility_structure", "decision_summary"]
 
     print(f"\n  Tradeable Ideas for {_daily_date()} ({len(tradeable)} of {len(entries)})")
     for e in tradeable:
@@ -790,20 +744,29 @@ def do_daily_tradeable_ideas():
               f"{e.get('trade_quality', ''):8s} "
               f"{summary}")
 
-    _save_report("daily_tradeable_ideas", {
-        "week_ended": _daily_date(),
-        "total_entries": len(entries),
-        "tradeable_count": len(tradeable),
-        "entries": [{k: e.get(k) for k in cols} for e in tradeable],
-    }, issue_date=_daily_date())
+
+def do_daily_intelligence_context():
+    """Get weekly intelligence context for daily trading decisions."""
+    result = _get_server().get_issue_summary(week_ended=_daily_date())
+    brief = result.get("issue_brief", {})
+
+    print(f"\n  === Intelligence Context: {_daily_date()} ===")
+
+    for field, label in [("key_themes", "Key Themes"),
+                         ("notable_risks", "Risks to Watch"),
+                         ("notable_opportunities", "Opportunities")]:
+        items = brief.get(field, [])
+        if items:
+            print(f"\n  {label}:")
+            for item in items[:5]:
+                print(f"    - {item}")
 
 
-LAYER_D_ITEMS = [
+LAYER_C_ITEMS = [
     ("1", "Exit schedule (enter positions manually)", do_daily_exit_schedule),
     ("2", "Exit schedule (from Schwab positions JSON file)", do_daily_exit_from_schwab),
-    ("3", "Weekly intelligence context", do_daily_issue_context),
-    ("4", "Watchlist reference rules", do_daily_watchlist_reference),
-    ("5", "Tradeable ideas only", do_daily_tradeable_ideas),
+    ("3", "Tradeable ideas only", do_daily_tradeable_ideas),
+    ("4", "Weekly intelligence context", do_daily_intelligence_context),
 ]
 
 
@@ -817,8 +780,7 @@ def print_top_menu():
     print("=" * 60)
     print("    A. Setup & Management")
     print("    B. Sunday Pipeline")
-    print("    C. Newsletter Analysis")
-    print("    D. Daily Bridge")
+    print("    C. Daily Bridge")
     print("\n    q. Quit    ?. Help")
     print("=" * 60)
 
@@ -862,20 +824,6 @@ def run_layer(key: str, name: str, items: list,
             print(f"\n  ERROR: {e}")
 
 
-def enter_analysis():
-    global _active_issue_date
-    default = _get_latest_week_ended()
-    try:
-        _active_issue_date = _prompt("Issue date", default)
-    except _Cancel:
-        _active_issue_date = None
-        return
-    print(f"  Analyzing issue: {_active_issue_date}")
-    run_layer("C", "Newsletter Analysis", LAYER_C_ITEMS,
-              context=_active_issue_date)
-    _active_issue_date = None
-
-
 def enter_daily():
     global _daily_issue_date
     default = _get_latest_week_ended()
@@ -885,7 +833,7 @@ def enter_daily():
         _daily_issue_date = None
         return
     print(f"  Daily bridge using issue: {_daily_issue_date}")
-    run_layer("D", "Daily Bridge", LAYER_D_ITEMS,
+    run_layer("C", "Daily Bridge", LAYER_C_ITEMS,
               context=_daily_issue_date)
     _daily_issue_date = None
 
@@ -913,12 +861,6 @@ def main():
                 print("Bye.")
                 break
         elif choice == "C":
-            try:
-                enter_analysis()
-            except SystemExit:
-                print("Bye.")
-                break
-        elif choice == "D":
             try:
                 enter_daily()
             except SystemExit:
