@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-SmartSpreads CLI - menu-driven access to core MCP functions.
+SmartSpreads Unified CLI - menu-driven access to both MCP servers.
+
+Bridges SmartSpreads (newsletter intelligence) and Schwab (positions, quotes,
+trade history) into a single offline interface.
 
 Use this when Claude Code is unavailable (rate limits, outages, etc.).
 Run from the SmartSpreads project root:
@@ -17,7 +20,11 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCHWAB_ROOT = Path(os.environ.get("SCHWAB_ROOT", r"C:\work\schwab-mcp-file"))
+
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+if (SCHWAB_ROOT / "src").exists():
+    sys.path.insert(0, str(SCHWAB_ROOT / "src"))
 os.chdir(PROJECT_ROOT)
 
 from dotenv import load_dotenv
@@ -33,6 +40,7 @@ database.create_schema()
 REPORTS_ROOT = PROJECT_ROOT / "reports"
 
 _server = None
+_schwab_ready = False
 _latest_week_ended: str | None = None
 
 
@@ -42,6 +50,17 @@ def _get_server():
         import newsletter_mcp.server as srv
         _server = srv
     return _server
+
+
+def _init_schwab():
+    global _schwab_ready
+    if _schwab_ready:
+        return
+    if not (SCHWAB_ROOT / "src" / "schwab_mcp").exists():
+        raise RuntimeError(f"Schwab MCP not found at {SCHWAB_ROOT}")
+    from schwab_mcp import db as schwab_db
+    schwab_db.init_db()
+    _schwab_ready = True
 
 
 def _get_latest_week_ended() -> str:
@@ -771,16 +790,227 @@ LAYER_C_ITEMS = [
 
 
 # ===================================================================
+# D - Schwab Positions & Quotes (REST-based, no stream required)
+# ===================================================================
+
+def do_schwab_auth_check():
+    _init_schwab()
+    from schwab_mcp.tools.account import check_schwab_auth
+    result = check_schwab_auth()
+    print(_format_json(result))
+    if result.get("status") == "SCHWAB_REAUTH_REQUIRED":
+        print("\n  Run: python -m schwab_mcp.auth --init")
+
+
+def do_schwab_account_summary():
+    _init_schwab()
+    from schwab_mcp.tools.account import get_account_summary
+    print(_format_json(get_account_summary()))
+
+
+def do_schwab_futures_positions():
+    _init_schwab()
+    from schwab_mcp.tools.positions import get_futures_positions
+    result = get_futures_positions()
+    legs = result.get("legs", [])
+    if legs:
+        cols = ["symbol", "side", "qty", "trade_price", "mark",
+                "pl_open_dollars", "mark_source", "spread_id"]
+        print(f"\n  Futures Positions ({len(legs)} legs)")
+        print(_md_table(legs, cols))
+    else:
+        print("  No futures positions found.")
+    spreads = result.get("spread_summary", [])
+    if spreads:
+        print(f"  Spread Summary ({len(spreads)} spreads)")
+        print(_md_table(spreads))
+
+
+def do_schwab_equity_positions():
+    _init_schwab()
+    from schwab_mcp.tools.account import get_equity_positions
+    print(_format_json(get_equity_positions()))
+
+
+def do_schwab_morning_brief():
+    _init_schwab()
+    from schwab_mcp.tools.spreads import get_all_positions_summary
+    result = get_all_positions_summary()
+    positions = result.get("positions", [])
+    if positions:
+        cols = ["name", "type", "current_value", "entry_value", "pnl_ticks",
+                "pnl_pct", "status"]
+        print(f"\n  Morning Brief ({len(positions)} positions)")
+        print(_md_table(positions, cols))
+    else:
+        print("  No positions configured in positions.yaml.")
+
+
+def do_schwab_quote():
+    _init_schwab()
+    from schwab_mcp.tools.quotes import get_futures_quote
+    symbol = _prompt("Symbol (e.g. /ZCN26)")
+    print(_format_json(get_futures_quote(symbol)))
+
+
+def do_schwab_quotes_batch():
+    _init_schwab()
+    from schwab_mcp.tools.quotes import get_quotes_batch
+    raw = _prompt("Symbols (comma-separated, e.g. /ZCN26,/ZCU26)")
+    symbols = [s.strip() for s in raw.split(",") if s.strip()]
+    result = get_quotes_batch(symbols)
+    quotes = result.get("quotes", [])
+    if quotes:
+        cols = ["symbol", "bid", "ask", "last", "mark", "change", "volume"]
+        print(_md_table(quotes, cols))
+    else:
+        print(_format_json(result))
+
+
+def do_schwab_spread_value():
+    _init_schwab()
+    from schwab_mcp.tools.spreads import get_spread_value
+    near = _prompt("Near month symbol (e.g. /ZCN26)")
+    far = _prompt("Far month symbol (e.g. /ZCU26)")
+    label = _prompt_optional("Label")
+    print(_format_json(get_spread_value(near, far, label or "")))
+
+
+def do_schwab_butterfly_value():
+    _init_schwab()
+    from schwab_mcp.tools.spreads import get_butterfly_value
+    front = _prompt("Front leg (e.g. /ZSF27)")
+    middle = _prompt("Middle leg (e.g. /ZSH27)")
+    back = _prompt("Back leg (e.g. /ZSK27)")
+    label = _prompt_optional("Label")
+    print(_format_json(get_butterfly_value(front, middle, back, label or "")))
+
+
+def do_schwab_target_distance():
+    _init_schwab()
+    from schwab_mcp.tools.spreads import check_target_distance
+    pos_id = _prompt("Position ID (e.g. zs_butterfly_1)")
+    print(_format_json(check_target_distance(pos_id)))
+
+
+def do_schwab_market_hours():
+    _init_schwab()
+    from schwab_mcp.tools.quotes import get_market_hours
+    result = get_market_hours()
+    is_open = result.get("is_open", False)
+    print(f"  Market is {'OPEN' if is_open else 'CLOSED'}")
+    if result.get("session"):
+        print(f"  Session: {result['session']}")
+
+
+def do_schwab_seasonal_days():
+    _init_schwab()
+    from schwab_mcp.tools.spreads import get_seasonal_days_remaining
+    pos_id = _prompt("Position ID")
+    print(_format_json(get_seasonal_days_remaining(pos_id)))
+
+
+def do_schwab_transactions():
+    _init_schwab()
+    from schwab_mcp.tools.account import get_transactions
+    tx_type = _prompt("Type (ALL/TRADE/DIVIDEND_OR_INTEREST)", "ALL")
+    start = _prompt_optional("Start date (YYYY-MM-DD)")
+    end = _prompt_optional("End date (YYYY-MM-DD)")
+    print(_format_json(get_transactions(
+        transaction_type=tx_type, start_date=start, end_date=end)))
+
+
+def do_schwab_positions_dates():
+    _init_schwab()
+    from schwab_mcp.tools.positions import check_positions_dates
+    print(_format_json(check_positions_dates()))
+
+
+LAYER_D_ITEMS = [
+    ("1", "Auth check", do_schwab_auth_check),
+    ("2", "Account summary", do_schwab_account_summary),
+    ("3", "Futures positions (with marks & P&L)", do_schwab_futures_positions),
+    ("4", "Equity positions", do_schwab_equity_positions),
+    ("5", "Morning brief (all spreads)", do_schwab_morning_brief),
+    ("6", "Quote single symbol", do_schwab_quote),
+    ("7", "Quote batch", do_schwab_quotes_batch),
+    ("8", "Spread value (calendar)", do_schwab_spread_value),
+    ("9", "Butterfly value", do_schwab_butterfly_value),
+    ("10", "Target distance check", do_schwab_target_distance),
+    ("11", "Seasonal days remaining", do_schwab_seasonal_days),
+    ("12", "Market hours", do_schwab_market_hours),
+    ("13", "Transactions", do_schwab_transactions),
+    ("14", "Check positions.yaml dates", do_schwab_positions_dates),
+]
+
+
+# ===================================================================
+# E - Schwab Trade History & Import
+# ===================================================================
+
+def do_schwab_trade_history():
+    _init_schwab()
+    from schwab_mcp.tools.positions import get_trade_history
+    spread_id = _prompt_optional("Filter by spread ID")
+    symbol = _prompt_optional("Filter by symbol")
+    asset_type = _prompt("Asset type (futures/equity)", "futures")
+    limit = int(_prompt("Limit", "50"))
+    result = get_trade_history(
+        spread_id=spread_id, symbol=symbol,
+        asset_type=asset_type, limit=limit)
+    trades = result.get("trades", [])
+    if trades:
+        cols = ["symbol", "side", "qty", "trade_price", "realized_pnl",
+                "spread_id", "close_date"]
+        print(f"\n  Trade History ({len(trades)} entries)")
+        print(_md_table(trades, cols))
+    summary = result.get("summary", {})
+    if summary:
+        print(f"  Total realized P&L: {summary.get('total_realized_pnl', 'N/A')}")
+    if not trades:
+        print(_format_json(result))
+
+
+def do_schwab_import_tos():
+    _init_schwab()
+    from schwab_mcp.tools.positions import import_tos_pnl
+    csv_path = _prompt_optional("TOS CSV path (Enter for default)")
+    include_eq = _prompt("Include equities? (y/n)", "n").lower() == "y"
+    result = import_tos_pnl(csv_path=csv_path, include_equities=include_eq)
+    print(_format_json(result))
+
+
+def do_schwab_seed_stream():
+    _init_schwab()
+    from schwab_mcp.tools.positions import seed_stream_positions_from_csv
+    csv_path = _prompt_optional("TOS CSV path (Enter for default)")
+    overwrite = _prompt("Overwrite existing? (y/n)", "n").lower() == "y"
+    result = seed_stream_positions_from_csv(csv_path=csv_path, overwrite=overwrite)
+    print(_format_json(result))
+
+
+LAYER_E_ITEMS = [
+    ("1", "Trade history", do_schwab_trade_history),
+    ("2", "Import TOS P&L", do_schwab_import_tos),
+    ("3", "Seed stream positions from CSV", do_schwab_seed_stream),
+]
+
+
+# ===================================================================
 # Menu engine
 # ===================================================================
 
 def print_top_menu():
+    schwab_ok = (SCHWAB_ROOT / "src" / "schwab_mcp").exists()
+    schwab_tag = "" if schwab_ok else " [not found]"
     print("\n" + "=" * 60)
-    print("  SmartSpreads CLI - Offline MCP Tool Runner")
+    print("  SmartSpreads Unified CLI")
     print("=" * 60)
-    print("    A. Setup & Management")
-    print("    B. Sunday Pipeline")
-    print("    C. Daily Bridge")
+    print("    A. Setup & Management        (SmartSpreads)")
+    print("    B. Sunday Pipeline            (SmartSpreads)")
+    print("    C. Daily Bridge               (SmartSpreads)")
+    print(f"    D. Positions & Quotes         (Schwab){schwab_tag}")
+    print(f"    E. Trade History & Import     (Schwab){schwab_tag}")
     print("\n    q. Quit    ?. Help")
     print("=" * 60)
 
@@ -840,6 +1070,13 @@ def enter_daily():
 
 def main():
     print_top_menu()
+    layers = {
+        "A": ("A", "Setup & Management", LAYER_A_ITEMS, False),
+        "B": ("B", "Sunday Pipeline", LAYER_B_ITEMS, False),
+        "C": (None, None, None, True),  # special: enter_daily()
+        "D": ("D", "Schwab Positions & Quotes", LAYER_D_ITEMS, False),
+        "E": ("E", "Schwab Trade History & Import", LAYER_E_ITEMS, False),
+    }
     while True:
         choice = input("\nSelect> ").strip().upper()
         if choice in ("Q", "QUIT", "EXIT"):
@@ -848,27 +1085,18 @@ def main():
         if choice == "?":
             print_top_menu()
             continue
-        if choice == "A":
-            try:
-                run_layer("A", "Setup & Management", LAYER_A_ITEMS)
-            except SystemExit:
-                print("Bye.")
-                break
-        elif choice == "B":
-            try:
-                run_layer("B", "Sunday Pipeline", LAYER_B_ITEMS)
-            except SystemExit:
-                print("Bye.")
-                break
-        elif choice == "C":
-            try:
-                enter_daily()
-            except SystemExit:
-                print("Bye.")
-                break
-        else:
+        if choice not in layers:
             print(f"  Unknown option '{choice}'. Type ? for menu.")
             continue
+        key, name, items, is_daily = layers[choice]
+        try:
+            if is_daily:
+                enter_daily()
+            else:
+                run_layer(key, name, items)
+        except SystemExit:
+            print("Bye.")
+            break
         print_top_menu()
 
 
