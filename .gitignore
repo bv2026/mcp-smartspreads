@@ -4,6 +4,7 @@ logs/
 run/
 export/
 published/
+reports/
 __pycache__/
 *.pyc
 *.pyo
