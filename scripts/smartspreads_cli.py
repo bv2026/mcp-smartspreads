@@ -144,10 +144,13 @@ def _build_report_md(func_name: str, result: Any) -> str:
 
 def _save_report(func_name: str, result: Any,
                  issue_date: str | None = None) -> Path:
-    nl_date = issue_date or date.today().isoformat()
-    report_dir = REPORTS_ROOT / nl_date
+    if issue_date:
+        report_dir = REPORTS_ROOT / issue_date
+        filename = f"{issue_date}-{func_name}.md"
+    else:
+        report_dir = REPORTS_ROOT
+        filename = f"{func_name}.md"
     report_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{nl_date}-{func_name}.md"
     path = report_dir / filename
     path.write_text(_build_report_md(func_name, result), encoding="utf-8")
     return path
