@@ -58,6 +58,9 @@ def _init_schwab():
         return
     if not (SCHWAB_ROOT / "src" / "schwab_mcp").exists():
         raise RuntimeError(f"Schwab MCP not found at {SCHWAB_ROOT}")
+    schwab_env = SCHWAB_ROOT / ".env"
+    if schwab_env.exists():
+        load_dotenv(schwab_env, override=False)
     from schwab_mcp import db as schwab_db
     schwab_db.init_db()
     _schwab_ready = True
@@ -168,6 +171,21 @@ def _save_management_report(func_name: str, result: Any) -> Path:
     path = report_dir / f"{func_name}.md"
     path.write_text(_build_report_md(func_name, result), encoding="utf-8")
     return path
+
+
+def _save_schwab_report(func_name: str, result: Any) -> Path:
+    today = date.today().isoformat()
+    report_dir = REPORTS_ROOT / "schwab" / today
+    report_dir.mkdir(parents=True, exist_ok=True)
+    path = report_dir / f"{func_name}.md"
+    path.write_text(_build_report_md(func_name, result), encoding="utf-8")
+    return path
+
+
+def _run_and_report_schwab(func_name: str, result: Any) -> None:
+    print(_format_json(result))
+    path = _save_schwab_report(func_name, result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def _save_issue_report(week_ended: str, filename: str, content: str) -> Path:
@@ -797,7 +815,7 @@ def do_schwab_auth_check():
     _init_schwab()
     from schwab_mcp.tools.account import check_schwab_auth
     result = check_schwab_auth()
-    print(_format_json(result))
+    _run_and_report_schwab("check_schwab_auth", result)
     if result.get("status") == "SCHWAB_REAUTH_REQUIRED":
         print("\n  Run: python -m schwab_mcp.auth --init")
 
@@ -805,7 +823,7 @@ def do_schwab_auth_check():
 def do_schwab_account_summary():
     _init_schwab()
     from schwab_mcp.tools.account import get_account_summary
-    print(_format_json(get_account_summary()))
+    _run_and_report_schwab("account_summary", get_account_summary())
 
 
 def do_schwab_futures_positions():
@@ -824,12 +842,14 @@ def do_schwab_futures_positions():
     if spreads:
         print(f"  Spread Summary ({len(spreads)} spreads)")
         print(_md_table(spreads))
+    path = _save_schwab_report("futures_positions", result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def do_schwab_equity_positions():
     _init_schwab()
     from schwab_mcp.tools.account import get_equity_positions
-    print(_format_json(get_equity_positions()))
+    _run_and_report_schwab("equity_positions", get_equity_positions())
 
 
 def do_schwab_morning_brief():
@@ -844,13 +864,15 @@ def do_schwab_morning_brief():
         print(_md_table(positions, cols))
     else:
         print("  No positions configured in positions.yaml.")
+    path = _save_schwab_report("morning_brief", result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def do_schwab_quote():
     _init_schwab()
     from schwab_mcp.tools.quotes import get_futures_quote
     symbol = _prompt("Symbol (e.g. /ZCN26)")
-    print(_format_json(get_futures_quote(symbol)))
+    _run_and_report_schwab("futures_quote", get_futures_quote(symbol))
 
 
 def do_schwab_quotes_batch():
@@ -865,6 +887,8 @@ def do_schwab_quotes_batch():
         print(_md_table(quotes, cols))
     else:
         print(_format_json(result))
+    path = _save_schwab_report("quotes_batch", result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def do_schwab_spread_value():
@@ -873,7 +897,7 @@ def do_schwab_spread_value():
     near = _prompt("Near month symbol (e.g. /ZCN26)")
     far = _prompt("Far month symbol (e.g. /ZCU26)")
     label = _prompt_optional("Label")
-    print(_format_json(get_spread_value(near, far, label or "")))
+    _run_and_report_schwab("spread_value", get_spread_value(near, far, label or ""))
 
 
 def do_schwab_butterfly_value():
@@ -883,14 +907,15 @@ def do_schwab_butterfly_value():
     middle = _prompt("Middle leg (e.g. /ZSH27)")
     back = _prompt("Back leg (e.g. /ZSK27)")
     label = _prompt_optional("Label")
-    print(_format_json(get_butterfly_value(front, middle, back, label or "")))
+    _run_and_report_schwab("butterfly_value",
+                           get_butterfly_value(front, middle, back, label or ""))
 
 
 def do_schwab_target_distance():
     _init_schwab()
     from schwab_mcp.tools.spreads import check_target_distance
     pos_id = _prompt("Position ID (e.g. zs_butterfly_1)")
-    print(_format_json(check_target_distance(pos_id)))
+    _run_and_report_schwab("target_distance", check_target_distance(pos_id))
 
 
 def do_schwab_market_hours():
@@ -901,13 +926,15 @@ def do_schwab_market_hours():
     print(f"  Market is {'OPEN' if is_open else 'CLOSED'}")
     if result.get("session"):
         print(f"  Session: {result['session']}")
+    path = _save_schwab_report("market_hours", result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def do_schwab_seasonal_days():
     _init_schwab()
     from schwab_mcp.tools.spreads import get_seasonal_days_remaining
     pos_id = _prompt("Position ID")
-    print(_format_json(get_seasonal_days_remaining(pos_id)))
+    _run_and_report_schwab("seasonal_days", get_seasonal_days_remaining(pos_id))
 
 
 def do_schwab_transactions():
@@ -916,14 +943,14 @@ def do_schwab_transactions():
     tx_type = _prompt("Type (ALL/TRADE/DIVIDEND_OR_INTEREST)", "ALL")
     start = _prompt_optional("Start date (YYYY-MM-DD)")
     end = _prompt_optional("End date (YYYY-MM-DD)")
-    print(_format_json(get_transactions(
-        transaction_type=tx_type, start_date=start, end_date=end)))
+    _run_and_report_schwab("transactions", get_transactions(
+        transaction_type=tx_type, start_date=start, end_date=end))
 
 
 def do_schwab_positions_dates():
     _init_schwab()
     from schwab_mcp.tools.positions import check_positions_dates
-    print(_format_json(check_positions_dates()))
+    _run_and_report_schwab("positions_dates", check_positions_dates())
 
 
 LAYER_D_ITEMS = [
@@ -969,6 +996,8 @@ def do_schwab_trade_history():
         print(f"  Total realized P&L: {summary.get('total_realized_pnl', 'N/A')}")
     if not trades:
         print(_format_json(result))
+    path = _save_schwab_report("trade_history", result)
+    print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
 def do_schwab_import_tos():
@@ -977,7 +1006,7 @@ def do_schwab_import_tos():
     csv_path = _prompt_optional("TOS CSV path (Enter for default)")
     include_eq = _prompt("Include equities? (y/n)", "n").lower() == "y"
     result = import_tos_pnl(csv_path=csv_path, include_equities=include_eq)
-    print(_format_json(result))
+    _run_and_report_schwab("import_tos_pnl", result)
 
 
 def do_schwab_seed_stream():
@@ -986,7 +1015,7 @@ def do_schwab_seed_stream():
     csv_path = _prompt_optional("TOS CSV path (Enter for default)")
     overwrite = _prompt("Overwrite existing? (y/n)", "n").lower() == "y"
     result = seed_stream_positions_from_csv(csv_path=csv_path, overwrite=overwrite)
-    print(_format_json(result))
+    _run_and_report_schwab("seed_stream_positions", result)
 
 
 LAYER_E_ITEMS = [
