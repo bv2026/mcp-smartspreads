@@ -33,6 +33,7 @@ database.create_schema()
 REPORTS_ROOT = PROJECT_ROOT / "reports"
 
 _server = None
+_latest_week_ended: str | None = None
 
 
 def _get_server():
@@ -41,6 +42,22 @@ def _get_server():
         import newsletter_mcp.server as srv
         _server = srv
     return _server
+
+
+def _get_latest_week_ended() -> str:
+    global _latest_week_ended
+    if _latest_week_ended is None:
+        issues = _get_server().list_issues(limit=1)
+        if issues:
+            _latest_week_ended = issues[0]["week_ended"]
+        else:
+            _latest_week_ended = date.today().isoformat()
+    return _latest_week_ended
+
+
+def _prompt_week(msg: str = "Week ended date") -> str:
+    default = _get_latest_week_ended()
+    return _prompt(msg, default)
 
 
 def _format_json(result: Any) -> str:
@@ -132,20 +149,21 @@ def _build_report_md(func_name: str, result: Any) -> str:
     return "\n".join(sections)
 
 
-def _save_report(func_name: str, result: Any) -> Path:
-    today = date.today().isoformat()
-    ts = datetime.now().strftime("%H%M%S")
-    report_dir = REPORTS_ROOT / today
+def _save_report(func_name: str, result: Any,
+                 issue_date: str | None = None) -> Path:
+    nl_date = issue_date or _get_latest_week_ended()
+    report_dir = REPORTS_ROOT / nl_date
     report_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{func_name}-{ts}.md"
+    filename = f"{nl_date}-{func_name}.md"
     path = report_dir / filename
     path.write_text(_build_report_md(func_name, result), encoding="utf-8")
     return path
 
 
-def _run_and_report(func_name: str, result: Any) -> None:
+def _run_and_report(func_name: str, result: Any,
+                    issue_date: str | None = None) -> None:
     print(_format_json(result))
-    path = _save_report(func_name, result)
+    path = _save_report(func_name, result, issue_date=issue_date)
     print(f"\n[saved: {path.relative_to(PROJECT_ROOT)}]")
 
 
@@ -170,9 +188,10 @@ def do_list_issues():
 
 
 def do_verify_newsletter():
-    week = _prompt_optional("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     _run_and_report("verify_newsletter_ingested",
-                    _get_server().verify_newsletter_ingested(week_ended=week))
+                    _get_server().verify_newsletter_ingested(week_ended=week),
+                    issue_date=week)
 
 
 def do_ingest_newsletter():
@@ -187,9 +206,10 @@ def do_ingest_pending():
 
 
 def do_get_issue_summary():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     _run_and_report("get_issue_summary",
-                    _get_server().get_issue_summary(week_ended=week))
+                    _get_server().get_issue_summary(week_ended=week),
+                    issue_date=week)
 
 
 # ---------------------------------------------------------------------------
@@ -197,38 +217,43 @@ def do_get_issue_summary():
 # ---------------------------------------------------------------------------
 
 def do_get_watchlist():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     quality = _prompt_optional("Min trade quality (e.g. 'Tier 2')")
     _run_and_report("get_watchlist",
                     _get_server().get_watchlist(week_ended=week,
-                                               min_trade_quality=quality))
+                                               min_trade_quality=quality),
+                    issue_date=week)
 
 
 def do_get_watchlist_reference():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     _run_and_report("get_watchlist_reference",
-                    _get_server().get_watchlist_reference(week_ended=week))
+                    _get_server().get_watchlist_reference(week_ended=week),
+                    issue_date=week)
 
 
 def do_get_validated_report():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     _run_and_report("get_validated_watchlist_report",
-                    _get_server().get_validated_watchlist_report(week_ended=week))
+                    _get_server().get_validated_watchlist_report(week_ended=week),
+                    issue_date=week)
 
 
 def do_publish_issue():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     out = _prompt_optional("Output directory")
     _run_and_report("publish_issue",
-                    _get_server().publish_issue(week_ended=week, output_dir=out))
+                    _get_server().publish_issue(week_ended=week, output_dir=out),
+                    issue_date=week)
 
 
 def do_refresh_and_publish():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     out = _prompt_optional("Output directory")
     _run_and_report("refresh_and_publish_issue",
                     _get_server().refresh_and_publish_issue(week_ended=week,
-                                                           output_dir=out))
+                                                           output_dir=out),
+                    issue_date=week)
 
 
 # ---------------------------------------------------------------------------
@@ -236,22 +261,24 @@ def do_refresh_and_publish():
 # ---------------------------------------------------------------------------
 
 def do_export_csv():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     section = _prompt_optional("Section name filter")
     quality = _prompt_optional("Min trade quality")
     out_path = _prompt_optional("Output CSV path")
     _run_and_report("export_watchlist_csv",
                     _get_server().export_watchlist_csv(
                         week_ended=week, section_name=section,
-                        min_trade_quality=quality, output_path=out_path))
+                        min_trade_quality=quality, output_path=out_path),
+                    issue_date=week)
 
 
 def do_export_package():
-    week = _prompt("Week ended date (YYYY-MM-DD)")
+    week = _prompt_week()
     out = _prompt_optional("Output directory")
     _run_and_report("export_watchlist_package",
                     _get_server().export_watchlist_package(week_ended=week,
-                                                          output_dir=out))
+                                                          output_dir=out),
+                    issue_date=week)
 
 
 def do_export_bundle():
@@ -307,10 +334,11 @@ def do_list_commodity_catalog():
 
 
 def do_import_commodity_catalog():
-    week = _prompt_optional("Week ended (Enter for latest)")
+    week = _prompt_week("Week ended")
     _run_and_report("import_newsletter_commodity_catalog",
                     _get_server().import_newsletter_commodity_catalog(
-                        week_ended=week))
+                        week_ended=week),
+                    issue_date=week)
 
 
 def do_list_contract_codes():
@@ -319,9 +347,10 @@ def do_list_contract_codes():
 
 
 def do_import_contract_codes():
-    week = _prompt_optional("Week ended (Enter for latest)")
+    week = _prompt_week("Week ended")
     _run_and_report("import_contract_month_codes",
-                    _get_server().import_contract_month_codes(week_ended=week))
+                    _get_server().import_contract_month_codes(week_ended=week),
+                    issue_date=week)
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +429,7 @@ LAYERS = [
 def print_top_menu():
     print("\n" + "=" * 60)
     print("  SmartSpreads CLI - Offline MCP Tool Runner")
-    print("  Reports saved to: reports/<date>/<name>-<HHMMSS>.md")
+    print("  Reports saved to: reports/<issue-date>/<issue-date>-<func>.md")
     print("=" * 60)
     for key, name, _ in LAYERS:
         print(f"    {key}. {name}")
