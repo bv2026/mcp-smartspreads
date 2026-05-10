@@ -23,6 +23,7 @@ What still remains after this sprint:
 
 All documentation lives in [`docs/`](./docs/):
 
+- [CLI.md](./docs/CLI.md) — unified CLI usage guide (SmartSpreads + Schwab)
 - [SETUP.md](./docs/SETUP.md) — local deployment and MCP client configuration
 - [DESIGN.md](./docs/DESIGN.md) — architecture and schema decisions
 - [USAGE.md](./docs/USAGE.md) — MCP queries and export workflows
