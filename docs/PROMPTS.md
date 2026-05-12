@@ -147,6 +147,9 @@ FAIL if Claude uses stale schema, fails Schwab auth, uses stale Schwab data, use
 
 Output requirements (downloadable markdown):
 - Return one complete Markdown report (no partial snippets).
+- Keep it compact and operator-friendly.
+- Do not include raw JSON blocks or tool call transcripts.
+- For each gate/step, include only key fields and PASS/FAIL reason.
 - Use these headings in order:
   - # SmartSpreads Position & Exit Schedule Verification
   - ## Schema Gate

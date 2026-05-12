@@ -195,6 +195,8 @@ Do not write to disk.
 Provide a suggested filename only:
 - `newsletter_report_<week_ended>.md`
 - where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
+- Keep output compact and operator-friendly.
+- Do not include raw JSON blocks or tool call transcripts.
 - Do not include path checks, tool chatter, or troubleshooting text.
 - Final output must be exactly:
   - one fenced markdown block with the report
@@ -222,6 +224,8 @@ Do not write to disk.
 Provide a suggested filename only:
 - `validated_watchlist_report_<week_ended>.md`
 - where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
+- Keep output compact and operator-friendly.
+- Do not include raw JSON blocks or tool call transcripts.
 - Do not include path checks, tool chatter, or troubleshooting text.
 - Final output must be exactly:
   - one fenced markdown block with the report
