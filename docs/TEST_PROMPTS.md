@@ -191,13 +191,10 @@ Use smartspreads-mcp only. First call verify_newsletter_ingested with no date an
 
 Then generate one complete Markdown newsletter report for that verified week.
 
-Save the same Markdown to:
-- reports/<week_ended>/newsletter_report_<week_ended>.md
-- where <week_ended> is the verified issue date in YYYY-MM-DD format.
-- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
-- Never save to container-only paths such as `/home/claude/...`.
-
-End by printing the saved file path.
+Do not write to disk.
+Provide a suggested filename only:
+- `newsletter_report_<week_ended>.md`
+- where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
 ```
 
 ### Validated watchlist report with save path
@@ -217,11 +214,8 @@ Call get_validated_watchlist_report for verifier.week_ended with those expected 
 If is_valid is false, stop and report the mismatch.
 If is_valid is true, output report_markdown exactly as returned.
 
-Save the same Markdown to:
-- reports/<week_ended>/validated_watchlist_report_<week_ended>.md
-- where <week_ended> is verifier.week_ended in YYYY-MM-DD format.
-- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
-- Never save to container-only paths such as `/home/claude/...`.
-
-End by printing the saved file path.
+Do not write to disk.
+Provide a suggested filename only:
+- `validated_watchlist_report_<week_ended>.md`
+- where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
 ```

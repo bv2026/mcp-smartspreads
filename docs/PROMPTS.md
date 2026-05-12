@@ -145,7 +145,7 @@ POSITION/EXIT SCHEDULE PASS WITH SNAPSHOT PRICING NOTE if the only non-live cond
 
 FAIL if Claude uses stale schema, fails Schwab auth, uses stale Schwab data, uses stale CSV as current positions, uses memory, or includes any spread not present in current tool output.
 
-Output and save requirements:
+Output requirements (downloadable markdown):
 - Return one complete Markdown report (no partial snippets).
 - Use these headings in order:
   - # SmartSpreads Position & Exit Schedule Verification
@@ -156,12 +156,10 @@ Output and save requirements:
   - ## Step 4: Schwab Spread Summaries
   - ## Step 5: Daily Exit Schedule
   - # Final Verdict
-- Save the same Markdown to:
-  - reports/schwab/<today>/position_exit_verification_<today>.md
-  - where <today> is the run date in YYYY-MM-DD format.
-- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
-- Never save to container-only paths such as `/home/claude/...`.
-- End by printing the saved file path.
+- Do not write to disk.
+- Provide a suggested filename only:
+  - `position_exit_verification_<today>.md`
+  - where `<today>` is the run date in YYYY-MM-DD format.
 ```
 
 ## Quiet mode prefix
@@ -297,14 +295,12 @@ Use smartspreads-mcp only. First verify the April 24, 2026 newsletter is ingeste
 ```text
 Use smartspreads-mcp only. First call verify_newsletter_ingested with no date and tell me the actual latest_ingested_week_ended and source_file. If that is not the newsletter expected for this week, stop and say the new newsletter is not ingested. If it is correct, give me the report requested from that exact issue only.
 
-Output and save requirements:
+Output requirements (downloadable markdown):
 - Return one complete Markdown newsletter report.
-- Save the same Markdown to:
-  - reports/<week_ended>/newsletter_report_<week_ended>.md
-  - where <week_ended> is the verified issue date in YYYY-MM-DD format.
-- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
-- Never save to container-only paths such as `/home/claude/...`.
-- End by printing the saved file path.
+- Do not write to disk.
+- Provide a suggested filename only:
+  - `newsletter_report_<week_ended>.md`
+  - where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
 ```
 
 ### Latest validated watchlist report
@@ -337,14 +333,12 @@ Inter-Commodity `commodity_name` values must be the literal paired names from th
 
 The validated report is source-backed. Every report row must have `source_page_number`, `source_raw_row`, and `source_row_hash` inside the tool result. If the tool reports a `source_provenance` mismatch, stop instead of reporting rows.
 
-Output and save requirements:
+Output requirements (downloadable markdown):
 - Return one complete Markdown watchlist report.
-- Save the same Markdown to:
-  - reports/<week_ended>/validated_watchlist_report_<week_ended>.md
-  - where <week_ended> is verifier.week_ended in YYYY-MM-DD format.
-- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
-- Never save to container-only paths such as `/home/claude/...`.
-- End by printing the saved file path.
+- Do not write to disk.
+- Provide a suggested filename only:
+  - `validated_watchlist_report_<week_ended>.md`
+  - where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
 ```
 
 ### Sunday publish workflow
