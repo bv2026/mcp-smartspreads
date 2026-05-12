@@ -195,6 +195,10 @@ Do not write to disk.
 Provide a suggested filename only:
 - `newsletter_report_<week_ended>.md`
 - where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
+- Do not include path checks, tool chatter, or troubleshooting text.
+- Final output must be exactly:
+  - one fenced markdown block with the report
+  - one line after it: `Filename: newsletter_report_<week_ended>.md`
 ```
 
 ### Validated watchlist report with save path
@@ -218,4 +222,8 @@ Do not write to disk.
 Provide a suggested filename only:
 - `validated_watchlist_report_<week_ended>.md`
 - where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
+- Do not include path checks, tool chatter, or troubleshooting text.
+- Final output must be exactly:
+  - one fenced markdown block with the report
+  - one line after it: `Filename: validated_watchlist_report_<week_ended>.md`
 ```

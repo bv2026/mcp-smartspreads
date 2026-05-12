@@ -160,6 +160,10 @@ Output requirements (downloadable markdown):
 - Provide a suggested filename only:
   - `position_exit_verification_<today>.md`
   - where `<today>` is the run date in YYYY-MM-DD format.
+- Do not include path checks, tool chatter, or troubleshooting text.
+- Final output must be exactly:
+  - one fenced markdown block with the report
+  - one line after it: `Filename: position_exit_verification_<today>.md`
 ```
 
 ## Quiet mode prefix
@@ -168,6 +172,10 @@ Use this at the top of any Claude prompt when you want a cleaner final answer wi
 
 ```text
 Use only the needed MCP tools. Do not show tool discovery, function schemas, internal steps, or MCP details. Just use the tools and return the final answer.
+Do not narrate troubleshooting, path checks, or "let me check" steps.
+Return only:
+1) one fenced markdown block containing the final report
+2) a final line: Filename: <name>.md
 ```
 
 ## Ingestion prompts
@@ -301,6 +309,10 @@ Output requirements (downloadable markdown):
 - Provide a suggested filename only:
   - `newsletter_report_<week_ended>.md`
   - where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
+- Do not include path checks, tool chatter, or troubleshooting text.
+- Final output must be exactly:
+  - one fenced markdown block with the report
+  - one line after it: `Filename: newsletter_report_<week_ended>.md`
 ```
 
 ### Latest validated watchlist report
@@ -339,6 +351,10 @@ Output requirements (downloadable markdown):
 - Provide a suggested filename only:
   - `validated_watchlist_report_<week_ended>.md`
   - where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
+- Do not include path checks, tool chatter, or troubleshooting text.
+- Final output must be exactly:
+  - one fenced markdown block with the report
+  - one line after it: `Filename: validated_watchlist_report_<week_ended>.md`
 ```
 
 ### Sunday publish workflow
