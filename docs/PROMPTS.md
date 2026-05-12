@@ -150,6 +150,10 @@ Output requirements (downloadable markdown):
 - Keep it compact and operator-friendly.
 - Do not include raw JSON blocks or tool call transcripts.
 - For each gate/step, include only key fields and PASS/FAIL reason.
+- Immediately under the title, include a 3-line summary block:
+  - `Status: PASS|FAIL`
+  - `Live marks: <live>/<total>`
+  - `Immediate actions: <short action or None>`
 - Use these headings in order:
   - # SmartSpreads Position & Exit Schedule Verification
   - ## Schema Gate

@@ -197,6 +197,10 @@ Provide a suggested filename only:
 - where `<week_ended>` is the verified issue date in YYYY-MM-DD format.
 - Keep output compact and operator-friendly.
 - Do not include raw JSON blocks or tool call transcripts.
+- Immediately under the title, include a 3-line summary block:
+  - `Status: PASS|FAIL`
+  - `Live marks: <live>/<total>` (if applicable)
+  - `Immediate actions: <short action or None>`
 - Do not include path checks, tool chatter, or troubleshooting text.
 - Final output must be exactly:
   - one fenced markdown block with the report
@@ -226,6 +230,10 @@ Provide a suggested filename only:
 - where `<week_ended>` is verifier.week_ended in YYYY-MM-DD format.
 - Keep output compact and operator-friendly.
 - Do not include raw JSON blocks or tool call transcripts.
+- Immediately under the title, include a 3-line summary block:
+  - `Status: PASS|FAIL`
+  - `Live marks: <live>/<total>` (if applicable)
+  - `Immediate actions: <short action or None>`
 - Do not include path checks, tool chatter, or troubleshooting text.
 - Final output must be exactly:
   - one fenced markdown block with the report
