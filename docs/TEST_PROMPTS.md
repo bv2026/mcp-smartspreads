@@ -179,3 +179,45 @@ April 10 is a grain-led issue with 10 trades split 7 intra / 3 inter. The main s
 ```text
 Use get_issue_summary for <date> once. Read <field path> from that result and answer concisely in plain English. Do not restate raw JSON.
 ```
+
+## Saved Markdown artifact prompts
+
+Use these when you want the output in a reusable Markdown file that can be saved/downloaded directly.
+
+### Newsletter report with save path
+
+```text
+Use smartspreads-mcp only. First call verify_newsletter_ingested with no date and confirm the target week is ingested. If it is not ingested, stop and report the latest ingested week.
+
+Then generate one complete Markdown newsletter report for that verified week.
+
+Save the same Markdown to:
+- reports/<week_ended>/newsletter_report_<week_ended>.md
+- where <week_ended> is the verified issue date in YYYY-MM-DD format.
+
+End by printing the saved file path.
+```
+
+### Validated watchlist report with save path
+
+```text
+Use smartspreads-mcp only. Do not use memory.
+
+Step 1:
+Call verify_newsletter_ingested with no date and return raw JSON.
+
+Step 2:
+Use verifier.entry_count, verifier.section_counts, and verifier.watchlist_fingerprint as the expected contract.
+
+Step 3:
+Call get_validated_watchlist_report for verifier.week_ended with those expected values.
+
+If is_valid is false, stop and report the mismatch.
+If is_valid is true, output report_markdown exactly as returned.
+
+Save the same Markdown to:
+- reports/<week_ended>/validated_watchlist_report_<week_ended>.md
+- where <week_ended> is verifier.week_ended in YYYY-MM-DD format.
+
+End by printing the saved file path.
+```
