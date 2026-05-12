@@ -194,6 +194,8 @@ Then generate one complete Markdown newsletter report for that verified week.
 Save the same Markdown to:
 - reports/<week_ended>/newsletter_report_<week_ended>.md
 - where <week_ended> is the verified issue date in YYYY-MM-DD format.
+- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
+- Never save to container-only paths such as `/home/claude/...`.
 
 End by printing the saved file path.
 ```
@@ -218,6 +220,8 @@ If is_valid is true, output report_markdown exactly as returned.
 Save the same Markdown to:
 - reports/<week_ended>/validated_watchlist_report_<week_ended>.md
 - where <week_ended> is verifier.week_ended in YYYY-MM-DD format.
+- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
+- Never save to container-only paths such as `/home/claude/...`.
 
 End by printing the saved file path.
 ```

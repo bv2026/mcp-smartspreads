@@ -159,6 +159,8 @@ Output and save requirements:
 - Save the same Markdown to:
   - reports/schwab/<today>/position_exit_verification_<today>.md
   - where <today> is the run date in YYYY-MM-DD format.
+- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
+- Never save to container-only paths such as `/home/claude/...`.
 - End by printing the saved file path.
 ```
 
@@ -300,6 +302,8 @@ Output and save requirements:
 - Save the same Markdown to:
   - reports/<week_ended>/newsletter_report_<week_ended>.md
   - where <week_ended> is the verified issue date in YYYY-MM-DD format.
+- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
+- Never save to container-only paths such as `/home/claude/...`.
 - End by printing the saved file path.
 ```
 
@@ -338,6 +342,8 @@ Output and save requirements:
 - Save the same Markdown to:
   - reports/<week_ended>/validated_watchlist_report_<week_ended>.md
   - where <week_ended> is verifier.week_ended in YYYY-MM-DD format.
+- Save path must be workspace-local only (`C:\work\SmartSpreads\...` or `/mnt/c/work/SmartSpreads/...`).
+- Never save to container-only paths such as `/home/claude/...`.
 - End by printing the saved file path.
 ```
 
